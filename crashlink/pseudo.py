@@ -3807,8 +3807,7 @@ def _find_capture_boxes(
         for closure in consumers:
             findex = closure.fun.findex.value
             helper = helper_irs.get(findex)
-            entry = inline_bodies.get(findex)
-            if helper is None or entry is None or not entry[0] or entry[0][0] != name:
+            if helper is None or not helper.locals or helper.locals[0].name != name:
                 break
             h_total, h_accounted, h_defs, h_writes, h_consumers = _capture_box_uses(
                 helper.block, name, code, helper
