@@ -29,6 +29,7 @@ For anything that doesn't need a live session, there are subcommands that run on
 | `funcs` | List functions in a bytecode file |
 | `disasm` | Disassemble a function |
 | `decompile` | Decompile a function or class to pseudo-Haxe (decompiler is incomplete, usually functional) |
+| `sig` | Behavioural signature of a function: equal signatures prove equal behaviour (`--relaxed`, `--explain`; see [Behavioural Signatures](/equivalence)) |
 | `info` | Summary info: version, counts, etc. |
 | `search` | Search strings by substring |
 | `inlines` | Find function bodies the compiler inlined, with their parameter types and per-site constants (`--at File.hx:line`, `--func <findex>`) |

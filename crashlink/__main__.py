@@ -1492,6 +1492,41 @@ class Commands(BaseCommands):
                 return
         print("Function not found.")
 
+    @alias("hash", "equiv")
+    def sig(self, args: List[str]) -> None:
+        """Prints the behavioural signature of a function. `sig <idx> [--relaxed] [--explain]`
+
+        Two functions with the same signature behave the same; different signatures prove
+        nothing (see the Behavioural Signatures guide). `--relaxed` ignores checks that can
+        throw (null checks, checked casts); `--explain` prints the canonical form the hash
+        is computed from. A function the model cannot cover prints why instead."""
+        from .equivalence import signature
+        from .equivalence.explain import explain
+
+        flags = {a for a in args if a.startswith("--")}
+        rest = [a for a in args if not a.startswith("--")]
+        if not rest:
+            print("Usage: sig <index> [--relaxed] [--explain]")
+            return
+        try:
+            index = int(rest[0])
+        except ValueError:
+            print("Invalid index.")
+            return
+        strict = "--relaxed" not in flags
+        for func in self.code.functions:
+            if func.findex.value == index:
+                result = signature(self.code, func, strict=strict)
+                print(f"f@{index} {self.code.full_func_name(func)}")
+                print(f"  {result}" if result else f"  no signature: {result.reason}")
+                if "--explain" in flags and result:
+                    print(explain(self.code, func, strict=strict))
+                return
+        if any(native.findex.value == index for native in self.code.natives):
+            print("Natives have no body to hash.")
+            return
+        print("Function not found.")
+
     def cfg(self, args: List[str]) -> None:
         """Renders a control flow graph for a given findex and attempts to open it in the default image viewer. `cfg <idx>`"""
         if self._inspection_guard():
