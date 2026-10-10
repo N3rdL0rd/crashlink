@@ -11,7 +11,7 @@ import weakref
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field as dc_field
-from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any, Iterator
+from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any, Iterator, Iterable
 
 from .core import (
     Bytecode,
@@ -4021,23 +4021,29 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     core_fun_type_def = func_core.type.resolve(code).definition
     if isinstance(core_fun_type_def, Fun):
         start_arg = 1 if is_instance or is_constructor else 0
-        erased = (
+        erased, narrowed = (
             _erased_parameters(code, containing.dynamic, func_name_str)
             if is_instance and not is_constructor and containing is not None
-            else set()
+            else (set(), {})
         )
         variables, returned_variable = _own_type_variables(
             code, func_core, containing, func_name_str, is_instance
         )
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
-            arg_haxe_type_name = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_core_type)
+            arg_haxe_type_name = (
+                narrowed[i]
+                if i in narrowed
+                else "Dynamic"
+                if i in erased
+                else disasm._haxe_annotation(code, arg_core_type)
+            )
             if start_arg + i in variables:
                 variable = _type_variable_name(variables[start_arg + i])
                 arg_haxe_type_name = (
                     variable if arg_core_type.kind.value == Type.Kind.DYN.value else f"Array<{variable}>"
                 )
-            elif i not in erased:
+            elif i not in erased and i not in narrowed:
                 arg_haxe_type_name = mapargs.refine(
                     arg_haxe_type_name,
                     mapargs.value_type(code, ("r", func_core.findex.value, start_arg + i)),
@@ -6486,6 +6492,75 @@ def _implementation(code: Bytecode, interface: typeinit.Interface, name: str) ->
     return None
 
 
+def _method_body(code: Bytecode, chain: Iterable[Obj], name: str) -> Optional[Function]:
+    """The body of method `name` along `chain`: the first class in it that declares the method."""
+    for obj in chain:
+        for proto in obj.protos:
+            func = proto.findex.resolve(code)
+            if proto.name.resolve(code) == name and isinstance(func, Function):
+                return func
+    return None
+
+
+def _narrowed_parameters(code: Bytecode, interface: typeinit.Interface, name: str) -> Dict[int, str]:
+    """The parameters of an interface's method `name` that its values declare `Dynamic` but every
+    implementor types one concrete way (the generic `T` of `interface I<T>`, erased in the bytecode):
+    index -> Haxe type. Only a leaf interface qualifies, one neither extending nor extended, so
+    that its implementors are exactly the classes registered against it. A body that only throws
+    (the stub Haxe generates for an abstract base) takes no part in the agreement."""
+    member = next((f for f in interface.virtual.fields if f.name.resolve(code) == name), None)
+    if member is None or interface.parents:
+        return {}
+    signature = member.type.resolve(code).definition
+    if not isinstance(signature, Fun):
+        return {}
+    if any(interface in other.parents for other in typeinit.registry(code).interfaces.values()):
+        return {}
+    erased = [i for i, arg in enumerate(signature.args) if isinstance(arg.resolve(code).definition, Dyn)]
+    types: Dict[int, Set[str]] = {i: set() for i in erased}
+    for implementor in interface.implementors:
+        # The body the implementor's values run is its own, or else the one a subclass overrides it with.
+        funcs = [_method_body(code, _chain(code, implementor), name)]
+        funcs += [_method_body(code, [obj], name) for obj in _subclasses(code, implementor)]
+        for func in funcs:
+            if func is None:
+                continue
+            fun_def = func.type.resolve(code).definition
+            if not isinstance(fun_def, Fun) or len(fun_def.args) != len(signature.args) + 1:
+                return {}
+            if {op.op for op in func.ops} <= {"Null", "Throw"}:
+                continue
+            for i in erased:
+                types[i].add(disasm._haxe_annotation(code, fun_def.args[i + 1].resolve(code)))
+    return {i: next(iter(found)) for i, found in types.items() if len(found) == 1 and "Dynamic" not in found}
+
+
+def _subclasses(code: Bytecode, obj: Obj) -> List[Obj]:
+    """Every class that extends `obj`, directly or through a chain of super classes."""
+    return [
+        definition
+        for t in code.types
+        if isinstance(definition := t.definition, Obj)
+        and definition is not obj
+        and any(ancestor is obj for ancestor in _chain(code, definition))
+    ]
+
+
+def _narrowed_method_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> Dict[int, str]:
+    """`_narrowed_parameters` over every interface `dynamic` or its super classes implement. A
+    parameter two interfaces narrow differently is left erased."""
+    narrowed: Dict[int, str] = {}
+    conflicts: Set[int] = set()
+    if dynamic is None:
+        return narrowed
+    for obj in _chain(code, dynamic):
+        for interface in typeinit.implemented(code, obj):
+            for i, typ in _narrowed_parameters(code, interface, method_name).items():
+                if narrowed.setdefault(i, typ) != typ:
+                    conflicts.add(i)
+    return {i: typ for i, typ in narrowed.items() if i not in conflicts}
+
+
 def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, private: str = "") -> str:
     """An interface declaration from the type its values have: a member per field,
     methods for function-typed ones. `private` prefixes the declaration. A parameter an
@@ -6508,6 +6583,7 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
         if isinstance(signature, Fun):
             implementation = _implementation(code, interface, member_name)
             defaults = default_arg_regs(code, implementation) if implementation is not None else {}
+            narrowed = _narrowed_parameters(code, interface, member_name)
             params = []
             for i, arg in enumerate(signature.args):
                 load = defaults.get(i + 1)
@@ -6516,7 +6592,8 @@ def _interface_pseudo(code: Bytecode, interface: typeinit.Interface, name: str, 
                     default = _expression_to_haxe(default_arg_value(code, load), code, None)
                     params.append(f"a{i}: {disasm._haxe_annotation(code, value_type)} = {default}")
                 else:
-                    params.append(f"a{i}: {disasm._haxe_annotation(code, arg.resolve(code))}")
+                    annotation = narrowed.get(i) or disasm._haxe_annotation(code, arg.resolve(code))
+                    params.append(f"a{i}: {annotation}")
             ret = disasm._haxe_annotation(code, signature.ret.resolve(code))
             kw = "dynamic " if member_name in dynamic else ""
             lines.append(f"    {kw}function {member_name}({', '.join(params)}): {ret};")
@@ -7207,15 +7284,19 @@ def _own_type_variables(
     return variables, returned
 
 
-def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> Set[int]:
+def _erased_parameters(
+    code: Bytecode, dynamic: Optional[Obj], method_name: str
+) -> Tuple[Set[int], Dict[int, str]]:
     """Parameters of a method that an interface its class (or a super class) implements
     declares `Dynamic`: an interface with type parameters is erased to `Dynamic` there,
     while the implementation has the concrete type. Haxe matches the two parameter lists
     exactly, so they are declared `Dynamic` on the implementation as well. The same goes
-    for a method overriding one of a generic class, whose parameters were erased there."""
+    for a method overriding one of a generic class, whose parameters were erased there.
+    A parameter every implementor of a leaf interface types one concrete way is not erased:
+    it is returned with that type instead (see `_narrowed_parameters`)."""
     erased: Set[int] = set()
     if dynamic is None:
-        return erased
+        return erased, {}
     for parent in _ancestors(code, dynamic):
         signatures = [
             (proto.findex.resolve(code).type.resolve(code).definition, 1)
@@ -7233,6 +7314,11 @@ def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str)
                     for i, arg in enumerate(signature.args[skip:])
                     if isinstance(arg.resolve(code).definition, Dyn)
                 )
+    narrowed = {
+        i: typ
+        for i, typ in _narrowed_method_parameters(code, dynamic, method_name).items()
+        if i not in erased
+    }
     for obj in _chain(code, dynamic):
         for interface in typeinit.implemented(code, obj):
             for iface in [interface, *interface.ancestors()]:
@@ -7243,9 +7329,9 @@ def _erased_parameters(code: Bytecode, dynamic: Optional[Obj], method_name: str)
                     erased.update(
                         i
                         for i, arg in enumerate(signature.args)
-                        if isinstance(arg.resolve(code).definition, Dyn)
+                        if isinstance(arg.resolve(code).definition, Dyn) and i not in narrowed
                     )
-    return erased
+    return erased, narrowed
 
 
 def _overrides_super(code: Bytecode, dynamic: Optional[Obj], method_name: str) -> bool:
@@ -7283,9 +7369,17 @@ def _stub_method(code: Bytecode, func: Function, is_instance: bool, dynamic: Opt
         defaults = {reg: (func, load) for reg, load in default_arg_regs(code, func).items()}
         for reg, found in overriding_default_arg_regs(code, func).items():
             defaults.setdefault(reg, found)
-        erased = _erased_parameters(code, dynamic, name) if is_instance and not is_ctor else set()
+        erased, narrowed = (
+            _erased_parameters(code, dynamic, name) if is_instance and not is_ctor else (set(), {})
+        )
         for i, arg_idx in enumerate(fun_def.args[start:]):
-            t = "Dynamic" if i in erased else disasm._haxe_annotation(code, arg_idx.resolve(code))
+            t = (
+                narrowed[i]
+                if i in narrowed
+                else "Dynamic"
+                if i in erased
+                else disasm._haxe_annotation(code, arg_idx.resolve(code))
+            )
             found = defaults.get(start + i)
             if found is not None:
                 owner, load = found
