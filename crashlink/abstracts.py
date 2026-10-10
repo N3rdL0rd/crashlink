@@ -18,7 +18,7 @@ states the abstract where it's needed: `(x : Name).method()`.
 import threading
 import weakref
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, Optional, Tuple
+from typing import Dict, FrozenSet, List, Optional, Tuple
 
 from . import disasm, mapargs
 from .core import Bytecode, Fun, Function, Obj, Type, destaticify
@@ -92,6 +92,9 @@ class Abstract:
     def underlying_annotation(self, code: Bytecode) -> str:
         if self.underlying is None:
             return "Dynamic"
+        elem = self._underlying_elem_type(code)
+        if elem is not None:
+            return f"Array<{disasm._haxe_annotation(code, elem)}>"
         annotation = disasm._haxe_annotation(code, self.underlying)
         # A wrapped map has the value type its methods' uses of the value show.
         for findex in sorted(self.instance):
@@ -99,6 +102,26 @@ class Abstract:
             if value is not None:
                 return mapargs.refine(annotation, value)
         return annotation
+
+    def _underlying_elem_type(self, code: Bytecode) -> Optional[Type]:
+        """The element type of a wrapped erased array (`Array<T>` of a non-basic `T`), from the arrays
+        callers pass the members as the value and the constructor builds, when they agree."""
+        definition = self.underlying.definition if self.underlying is not None else None
+        if not isinstance(definition, Obj) or definition.name.resolve(code) != "hl.types.ArrayObj":
+            return None
+        from .decomp.opt.arraytypes import function_param_elem_types, function_return_elem_type
+
+        found: List[Optional[Type]] = []
+        for findex in sorted(self.instance):
+            func = code.fn(findex, native=False)
+            if isinstance(func, Function):
+                found.append(function_param_elem_types(code, func)[0])
+        if self.constructor is not None:
+            func = code.fn(self.constructor, native=False)
+            if isinstance(func, Function):
+                found.append(function_return_elem_type(code, func))
+        known = [elem for elem in found if elem is not None]
+        return known[0] if known and all(elem == known[0] for elem in known) else None
 
     def header(self, code: Bytecode, name: Optional[str] = None) -> str:
         """The declaration line, up to the opening brace, declaring `name` (default

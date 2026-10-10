@@ -154,3 +154,32 @@ class Main {
     assert actual == expected
     assert _same_signature(original, recompiled, "Main.setup")
     assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_abstract_over_an_erased_array_wraps_the_element_type_its_members_are_called_with(
+    tmp_path: Path,
+) -> None:
+    # The `_Impl_` members take the value as an `ArrayObj`; the arrays callers pass them say `T`.
+    source = """
+abstract Words(Array<String>) from Array<String> {
+    public var length(get, never):Int;
+
+    function get_length() return this.length;
+
+    @:arrayAccess function get(i:Int) return this[i];
+
+    public function joined() return this.join("+");
+}
+
+class Main {
+    static function main() {
+        var a:Words = ['hello', 'world'];
+        Sys.println(a.joined() + a.length + a[1]);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "abstract Words(Array<String>)" in files["src/Main.hx"]
+    assert actual == expected
+    assert _same_signature(original, recompiled, "Main.main")
+    assert _same_signature(original, recompiled, "Words_Impl_.joined")
