@@ -430,6 +430,36 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
             changed = True
             break
 
+    # -- merge blocks that are copies of each other (tail duplication) ------------------------------
+    changed = True
+    while changed:
+        changed = False
+        seen_blocks: Dict[Tuple[object, ...], int] = {}
+        for start in reach()[0]:
+            if start == entry:
+                seen_blocks[("entry",)] = start
+                continue
+            block = raw[start]
+            term = block.term
+            key = (
+                tuple(bytes(op.serialise()) for op in block.ops),
+                term.kind,
+                term.regs,
+                term.pred,
+                term.negated,
+                term.succs,
+                block.ends_trap,
+            )
+            twin = seen_blocks.get(key)
+            if twin is None:
+                seen_blocks[key] = start
+                continue
+            for other in raw.values():
+                other.term.succs = tuple(twin if s == start else s for s in other.term.succs)
+            del raw[start]
+            changed = True
+            break
+
     # -- canonical numbering ---------------------------------------------------------------------
     order: List[int] = []
     seen_ids: Set[int] = set()
