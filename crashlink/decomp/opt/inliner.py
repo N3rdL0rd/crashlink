@@ -1653,9 +1653,17 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         # A representation change is not work: HL boxes a value into a Dynamic
         # temp (or stringifies it) right before the single statement that
         # consumes it, and that temp is pure noise at the use site. A checked
-        # cast is a different matter and stays put.
+        # cast is a different matter and stays put, except for the null literal:
+        # a cast of null cannot fail, so moving it is unobservable, and it keeps
+        # the receiver null check that Haxe emits first in `arr[i] = cast null`.
         if isinstance(expr, IRCast) and self._is_boxing_cast(expr):
             return self.is_safe_to_inline_conservatively(expr.expr)
+        if (
+            isinstance(expr, IRCast)
+            and isinstance(expr.expr, IRConst)
+            and expr.expr.const_type == IRConst.ConstType.NULL
+        ):
+            return True
         if isinstance(expr, (IRConst, IRLocal)):
             return True
         # Numeric casts (Int -> Float and friends) are pure representation
