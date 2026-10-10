@@ -54,6 +54,17 @@ def _is_pos_infos(desc: str) -> bool:
     )
 
 
+def _normal_int(value: int, kind: int) -> int:
+    """An integer constant as the register holds it: -16 and 4294967280 are one I32 value."""
+    if kind in WIDTH:
+        return _wrap(value, WIDTH[kind])
+    if kind == 1:
+        return value & 0xFF
+    if kind == 2:
+        return value & 0xFFFF
+    return value
+
+
 def _wrap(value: int, width: int) -> int:
     value &= (1 << width) - 1
     return value - (1 << width) if value >> (width - 1) else value
@@ -447,6 +458,19 @@ class Builder:
             return _wrap(a | b, width)
         if name == "Xor":
             return _wrap(a ^ b, width)
+        if name in ("SDiv", "SMod", "UDiv", "UMod"):
+            # HashLink defines division by zero (and the overflowing -1 case): the result is 0 / a * b
+            if name in ("UDiv", "UMod"):
+                x, y = a & ((1 << width) - 1), b & ((1 << width) - 1)
+                if y == 0:
+                    return 0
+                return _wrap(x // y if name == "UDiv" else x % y, width)
+            if b == 0:
+                return 0
+            if b == -1:
+                return _wrap(a * b, width) if name == "SDiv" else 0
+            quotient = abs(a) // abs(b) * (1 if (a < 0) == (b < 0) else -1)
+            return _wrap(quotient if name == "SDiv" else a - quotient * b, width)
         if 0 <= b < width:
             if name == "Shl":
                 return _wrap(a << b, width)
@@ -501,7 +525,7 @@ class Builder:
         if name == "Mov":
             set_dst(self.reg(df["src"].value, b, lazy_ok=True))
         elif name == "Int":
-            value = df["ptr"].resolve(code).value
+            value = _normal_int(df["ptr"].resolve(code).value, self.reg_kind[df["dst"].value])
             set_dst(g.pure("int", (dst_desc(), value), ty=dst_desc()))
         elif name == "Bool":
             set_dst(g.pure("int", (dst_desc(), int(df["value"].value)), ty=dst_desc()))

@@ -109,6 +109,11 @@ SAME = [
         "var s = Std.string(p) + '-' + Std.string(q); return s.length;",
         "var a = Std.string(p); var b = Std.string(q); return (a + '-' + b).length;",
     ),
+    (
+        "integer division and modulo of constants",
+        "var m = 7 + Sys.args().length * 0; return p + (m % 4) + (-7 >>> 28) + (13 % 5);",
+        "var m = 7 + Sys.args().length * 0; return p + (m % 4) + 15 + 3;",
+    ),
     ("float constants", "return Std.int(3 / 2) + p;", "return 1 + p;"),
     (
         "a condition decided by a constant",
@@ -126,6 +131,7 @@ DIFFERENT = [
     ("subtraction operand order", "return p - q;", "return q - p;"),
     ("call order", "var x = a(p); var y = b(q); return x + y;", "var y = b(q); var x = a(p); return x + y;"),
     ("callee", "return a(p);", "return b(p);"),
+    ("modulo of constants", "return p + (13 % 5);", "return p + (13 % 6);"),
     ("converted value", "return Std.string(p).length;", "return Std.string(q).length;"),
     (
         "a constant condition that goes the other way",

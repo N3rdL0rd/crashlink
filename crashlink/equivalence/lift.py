@@ -13,7 +13,7 @@ that differ only in layout get the same graph:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from ..core import Opcode
 from ..opcodes import opcodes as OPCODE_SCHEMA
@@ -124,7 +124,22 @@ def _normalise_cond(op: Opcode, namer: Namer, regs: List[int]) -> Tuple[str, Tup
     return table[name]
 
 
-def _facts(ops: List[Opcode], code: object, address_taken: Set[int]) -> Dict[int, object]:
+def _int_value(value: int, kind: int) -> int:
+    """An int constant as its register holds it (signed for I32/I64, masked for U8/U16)."""
+    width = {3: 32, 4: 64}.get(kind)
+    if width is not None:
+        value &= (1 << width) - 1
+        return value - (1 << width) if value >> (width - 1) else value
+    if kind == 1:
+        return value & 0xFF
+    if kind == 2:
+        return value & 0xFFFF
+    return value
+
+
+def _facts(
+    ops: List[Opcode], code: object, address_taken: Set[int], kind_of: Callable[[int], int]
+) -> Dict[int, object]:
     """What is known about registers at the end of a block: "null", "nonnull" or an int constant.
 
     Only facts that follow from the block's own opcodes are kept, so a condition on a value built
@@ -158,13 +173,15 @@ def _facts(ops: List[Opcode], code: object, address_taken: Set[int]) -> Dict[int
         elif name == "Bool":
             facts[dst] = int(op.df["value"].value)
         elif name == "Int":
-            facts[dst] = int(op.df["ptr"].resolve(code).value)  # type: ignore[attr-defined]
+            facts[dst] = _int_value(int(op.df["ptr"].resolve(code).value), kind_of(dst))  # type: ignore[attr-defined]
         elif name == "Mov" and op.df["src"].value in facts and op.df["src"].value not in address_taken:
             facts[dst] = facts[op.df["src"].value]
     return facts
 
 
-def _decide(pred: str, operands: Tuple[int, ...], negated: bool, facts: Dict[int, object]) -> Optional[bool]:
+def _decide(
+    pred: str, operands: Tuple[int, ...], negated: bool, facts: Dict[int, object], bits: int = 0
+) -> Optional[bool]:
     """Whether the jump is certainly taken (True) or certainly not (False), if the facts settle it."""
     known = [facts.get(r) for r in operands]
     base: Optional[bool] = None
@@ -176,6 +193,10 @@ def _decide(pred: str, operands: Tuple[int, ...], negated: bool, facts: Dict[int
         base = known[0] == known[1]
     elif pred == "eq" and {known[0], known[1]} == {"null", "nonnull"}:
         base = False
+    elif pred in ("slt", "ult") and isinstance(known[0], int) and isinstance(known[1], int) and bits:
+        mask = (1 << bits) - 1
+        x, y = known[0], known[1]
+        base = x < y if pred == "slt" else (x & mask) < (y & mask)
     if base is None:
         return None
     return base != negated
@@ -294,13 +315,15 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
             fall = last_index + 1
             if name in CONDITIONALS:
                 pred, operands, negated = _normalise_cond(last, namer, regs)
-                facts = _facts(block.ops, namer.code, address_taken)
+                facts = _facts(block.ops, namer.code, address_taken, lambda reg: namer.kind_of(regs[reg]))
                 if pred == "eq" and "null" in (facts.get(operands[0]), facts.get(operands[1])):
                     # `x == null` is a test for null, however it was written.
                     other = operands[1] if facts.get(operands[0]) == "null" else operands[0]
                     pred, operands = "null", (other,)
                 pending_cond[start] = (pred, operands, negated, target, fall)
-                decided[start] = _decide(pred, operands, negated, facts)
+                decided[start] = _decide(
+                    pred, operands, negated, facts, {3: 32, 4: 64}.get(namer.kind_of(regs[operands[0]]), 0)
+                )
                 block.term = Term("cond")
             elif name == "JAlways":
                 block.term = Term("jump", succs=(target,))
