@@ -490,6 +490,24 @@ class IRStoreExpr(IRExpression):
         return f"<IRStoreExpr: ({self.assign.target} = {self.assign.expr})>"
 
 
+class IRPostIncrement(IRExpression):
+    """`target++` / `target--` used as a value: it yields what the field held and then bumps it."""
+
+    def __init__(self, code: Bytecode, target: "IRField", delta: int):
+        super().__init__(code)
+        self.target = target
+        self.delta = delta
+
+    def get_type(self) -> Type:
+        return self.target.get_type()
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.target]
+
+    def __repr__(self) -> str:
+        return f"<IRPostIncrement: {self.target}{'++' if self.delta > 0 else '--'}>"
+
+
 class IRCall(IRExpression):
     """Function call expression"""
 

@@ -44,6 +44,7 @@ from .decomp import (
     IRField,
     IRBoundClosure,
     IRStoreExpr,
+    IRPostIncrement,
     IRFunction,
     IRBlock,
     IRNew,
@@ -1415,6 +1416,9 @@ def _expression_to_haxe(
         if idx_str == "0" and arr_str in getattr(ir_function, "_unboxed_captures", ()):
             return arr_str  # the variable itself: its capture box is not part of the source
         return f"{arr_str}[{idx_str}]"
+
+    elif isinstance(expr, IRPostIncrement):
+        return f"{_expression_to_haxe(expr.target, code, ir_function)}{'++' if expr.delta > 0 else '--'}"
 
     elif isinstance(expr, IRStoreExpr):
         return f"({_store_chain(expr, code, ir_function)})"

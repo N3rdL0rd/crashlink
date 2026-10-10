@@ -121,6 +121,7 @@ from .opt.strings import (
     IRStringConcatFolder,
 )
 from .opt.chains import IRChainAssignFolder
+from .opt.postinc import IRPostIncrementRecovery
 from .opt.stringalloc import IRStringAllocInliner
 from .opt.pos import IRPosInfosFolder
 from .opt.arrays import (
@@ -428,6 +429,7 @@ class IRFunction:
                 IRNullableDefaultRecovery(self),
                 IRInlineCallRecovery(self),
                 IRPosInfosFolder(self),
+                IRPostIncrementRecovery(self),
             ]
             # Splice in plugin optimizers gated to this bytecode (see
             # crashlink.plugins). Which classes apply is a property of the image, so
