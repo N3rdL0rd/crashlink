@@ -167,6 +167,64 @@ def function_return_elem_type(code: Bytecode, func: Function) -> Optional[Type]:
     return result
 
 
+def function_param_elem_types(code: Bytecode, func: Function) -> List[Optional[Type]]:
+    """The element type of each erased array parameter of `func` (indexed like its arguments), recovered
+    from the arguments its direct callers pass, in any class.
+
+    Only the callers are lifted, on demand (and cached), so a callee in a class rendered before or without
+    its callers gets the same answer as the callers' evidence. Callers that disagree, or pass nothing
+    informative (`[]`, a Dynamic array), leave the parameter erased."""
+    cache = code._global_param_elem_types
+    findex = func.findex.value
+    if findex in cache:
+        return cache[findex]
+    fun = func.resolve_fun(code)
+    result: List[Optional[Type]] = [None] * len(fun.args)
+    cache[findex] = result  # a recursive call sees no evidence yet
+    # Only ArrayObj (Array<T> of a non-basic T) is erased; an ArrayDyn parameter is already Array<Dynamic>.
+    erased = [
+        i
+        for i, arg in enumerate(fun.args)
+        if _array_type_name(arg.resolve(code), code) == "hl.types.ArrayObj"
+    ]
+    if not erased:
+        return result
+    from ..function import IRFunction
+
+    evidence: Dict[int, List[Type]] = {i: [] for i in erased}
+    for caller_index in code.callers_map().get(findex, []):
+        caller = caller_index.resolve(code)
+        if not isinstance(caller, Function) or not caller.ops:
+            continue
+        caller_ir = IRFunction(code, caller)
+        global_cache = code._global_field_elem_types
+        _walk_block(caller_ir.block, code, set(), global_cache)
+        _recover_wrapper_element_types(caller_ir.block, code, global_cache)
+        for call in _calls_in_block(caller_ir.block):
+            if _called_function(call) is not func:
+                continue
+            for i in erased:
+                if i < len(call.args):
+                    elem = _returned_elem_type(call.args[i], code, global_cache)
+                    if elem is not None and not _is_uninformative(elem, code):
+                        evidence[i].append(elem)
+    for i in erased:
+        found = evidence[i]
+        if found and all(t == found[0] for t in found):
+            result[i] = found[0]
+    return result
+
+
+def _calls_in_block(block: IRBlock) -> List[IRCall]:
+    calls: List[IRCall] = []
+    for stmt in block.statements:
+        calls.extend(_collect_calls(stmt))
+        for child in stmt.get_children():
+            if isinstance(child, IRBlock):
+                calls.extend(_calls_in_block(child))
+    return calls
+
+
 def _walk_block(
     block: IRBlock,
     code: Bytecode,
@@ -562,6 +620,16 @@ def _recover_native_local_types(ir_func: "IRFunction", code: Bytecode) -> None:
         local.native_elem_type = evidence[key] or _get_type_in_code(code, "Dyn")
 
 
+def _recover_param_elem_types(ir_func: "IRFunction", code: Bytecode) -> None:
+    """Erased array parameters take the element type their callers (in any class) pass."""
+    for index, elem in enumerate(function_param_elem_types(code, ir_func.func)):
+        if elem is None or index >= len(ir_func.locals):
+            continue
+        local = ir_func.locals[index]
+        if local.array_elem_type is None and _is_erased_array(local, code):
+            local.array_elem_type = elem
+
+
 def _is_arrayobj_alloc(expr: IRExpression, code: Bytecode) -> bool:
     """Recognize the exact factory that installs and sizes its backing array.
 
@@ -742,6 +810,7 @@ def recover_array_element_types(ir_class: "IRClass") -> None:
     for ir_func in methods:
         if hasattr(ir_func, "block"):
             _recover_native_local_types(ir_func, code)
+            _recover_param_elem_types(ir_func, code)
 
     # Field copies and calls form chains across methods. Iterate to a fixed
     # point so declaration types do not depend on the method traversal order.
