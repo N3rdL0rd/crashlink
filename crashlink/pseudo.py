@@ -1464,7 +1464,11 @@ def _expression_to_haxe(
         return f"{arr_str}[{idx_str}]"
 
     elif isinstance(expr, IRPostIncrement):
-        return f"{_expression_to_haxe(expr.target, code, ir_function)}{'++' if expr.delta > 0 else '--'}"
+        target_text = _expression_to_haxe(expr.target, code, ir_function)
+        step = "++" if expr.delta > 0 else "--"
+        if target_text.startswith("(@:privateAccess ") and target_text.endswith(")"):
+            return f"{target_text[:-1]}{step})"  # the access wraps the whole place, not just its value
+        return f"{target_text}{step}"
 
     elif isinstance(expr, IRStoreExpr):
         return f"({_store_chain(expr, code, ir_function)})"

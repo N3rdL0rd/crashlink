@@ -23,7 +23,9 @@ def _roundtrip(tmp_path: Path, source: str) -> Tuple[str, Bytecode, Bytecode]:
     (tmp_path / "src" / "Main.hx").write_text(source)
     target = tmp_path / "original.hl"
     result = subprocess.run(
-        ["haxe", "-cp", str(tmp_path / "src"), "-main", "Main", "-hl", str(target)], capture_output=True, text=True
+        ["haxe", "-cp", str(tmp_path / "src"), "-main", "Main", "-hl", str(target)],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stderr
     files = project.export(Bytecode.from_path(str(target)))
