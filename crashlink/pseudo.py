@@ -862,6 +862,21 @@ def _store_chain(expr: "IRStoreExpr", code: Bytecode, ir_function: Optional[IRFu
     return f"{_expression_to_haxe(expr.target, code, ir_function)} = {value_str}"
 
 
+def _receiver_text(expr: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> str:
+    """Render an array or field receiver. A Dynamic value the compiler typed by a cast to a class
+    keeps that type named: without it a read of its field or element is typed through Dynamic."""
+    text = _expression_to_haxe(expr, code, ir_function)
+    if (
+        isinstance(expr, IRCast)
+        and not expr.untyped
+        and expr.expr.get_type().kind.value == Type.Kind.DYN.value
+        and isinstance(expr.get_type().definition, Obj)
+        and not text.startswith(("cast ", "(cast "))
+    ):
+        return f"({text} : {disasm._haxe_annotation(code, expr.get_type())})"
+    return text
+
+
 def _resolve_array_access(
     expr: "IRArrayAccess", code: Bytecode, ir_function: Optional[IRFunction]
 ) -> Tuple[str, str, Optional[str]]:
@@ -877,7 +892,7 @@ def _resolve_array_access(
     if isinstance(expr.array, IRLocal):
         arr_str = expr.array.name
     else:
-        arr_str = _expression_to_haxe(expr.array, code, ir_function)
+        arr_str = _receiver_text(expr.array, code, ir_function)
     idx_str = _expression_to_haxe(expr.index, code, ir_function)
     # ArrayObj/ArrayDyn stores element data in a `.array` backing field, exposed
     # via a plain `Field .array` read (unlike `.bytes`, no index shift). Strip
@@ -1304,7 +1319,7 @@ def _expression_to_haxe(
         if isinstance(expr.target, IRLocal):
             target_str = expr.target.name
         else:
-            target_str = _expression_to_haxe(expr.target, code, ir_function)
+            target_str = _receiver_text(expr.target, code, ir_function)
         target_type = expr.target.get_type()
         type_name = disasm.type_name(code, target_type)
         if (
