@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 if TYPE_CHECKING:
     from ..function import IRClass, IRFunction
 
-from ... import generics
-from ...core import Bytecode, Fun, Function, Obj, Type
+from ... import disasm, generics
+from ...core import Bytecode, Fun, Function, Obj, Type, Virtual
 from ..ir import (
     IRBlock,
     IRStatement,
@@ -392,6 +392,13 @@ def _array_element_type(
         cls = _class_name_of(expr.target, code)
         if cls is not None:
             return global_cache.get((cls, expr.field_name))
+        try:
+            structure = expr.target.get_type().definition
+        except Exception:
+            return None
+        if isinstance(structure, Virtual):
+            # A structure's array field: typed by the arrays the image stores into it.
+            return disasm.virtual_field_elem_types(code).get((id(structure), expr.field_name))
     return None
 
 
@@ -631,52 +638,12 @@ def _recover_param_elem_types(ir_func: "IRFunction", code: Bytecode) -> None:
 
 
 def _is_arrayobj_alloc(expr: IRExpression, code: Bytecode) -> bool:
-    """Recognize the exact factory that installs and sizes its backing array.
-
-    A source filename or erased return type alone also matches constructors
-    and unrelated ArrayObj helpers; neither is evidence of element forwarding.
-    """
+    """A call of the exact factory that installs and sizes its backing array."""
     if not isinstance(expr, IRCall) or expr.call_type != IRCall.CallType.FUNC or len(expr.args) != 1:
         return False
     if not isinstance(expr.target, IRConst) or not isinstance(expr.target.value, Function):
         return False
-    func = expr.target.value
-    try:
-        if not func.resolve_file(code).replace("\\", "/").endswith("hl/types/ArrayObj.hx"):
-            return False
-        sig = func.resolve_fun(code)
-        ret = sig.ret.resolve(code)
-        if (
-            len(sig.args) != 1
-            or sig.args[0].resolve(code).kind.value != Type.Kind.ARRAY.value
-            or _array_type_name(ret, code) != "hl.types.ArrayObj"
-        ):
-            return False
-        ops = func.ops
-        if [op.op for op in ops] != ["New", "SetField", "ArraySize", "SetField", "Ret"]:
-            return False
-        obj = ops[0].df["dst"].value
-        size = ops[2].df["dst"].value
-        fields = ret.definition.resolve_fields(code)
-        backing = fields[ops[1].df["field"].value]
-        length = fields[ops[3].df["field"].value]
-        return (
-            obj != 0
-            and size not in (0, obj)
-            and func.regs[obj].resolve(code) == ret
-            and ops[1].df["obj"].value == obj
-            and ops[1].df["src"].value == 0
-            and backing.name.resolve(code) == "array"
-            and backing.type.resolve(code).kind.value == Type.Kind.ARRAY.value
-            and ops[2].df["array"].value == 0
-            and ops[3].df["obj"].value == obj
-            and ops[3].df["src"].value == size
-            and length.name.resolve(code) == "length"
-            and length.type.resolve(code).kind.value == Type.Kind.I32.value
-            and ops[4].df["ret"].value == obj
-        )
-    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
-        return False
+    return disasm.is_arrayobj_alloc(code, expr.target.value)
 
 
 def _recover_wrapper_element_types(

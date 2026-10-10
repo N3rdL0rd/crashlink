@@ -539,6 +539,150 @@ def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set
     return omitted, stored_functions
 
 
+def is_arrayobj_alloc(code: Bytecode, func: Function | Native) -> bool:
+    """`hl.types.ArrayObj.alloc(native)`: the exact factory that installs a native array as an
+    Array's backing storage and sizes it, so the Array's elements are the native array's.
+
+    A source filename or erased return type alone also matches constructors and unrelated
+    ArrayObj helpers; neither is evidence of element forwarding."""
+    if not isinstance(func, Function):
+        return False
+    try:
+        if not func.resolve_file(code).replace("\\", "/").endswith("hl/types/ArrayObj.hx"):
+            return False
+        sig = func.resolve_fun(code)
+        ret = sig.ret.resolve(code)
+        if (
+            len(sig.args) != 1
+            or sig.args[0].resolve(code).kind.value != Type.Kind.ARRAY.value
+            or not isinstance(ret.definition, Obj)
+            or ret.definition.name.resolve(code) != "hl.types.ArrayObj"
+        ):
+            return False
+        ops = func.ops
+        if [op.op for op in ops] != ["New", "SetField", "ArraySize", "SetField", "Ret"]:
+            return False
+        obj = ops[0].df["dst"].value
+        size = ops[2].df["dst"].value
+        fields = ret.definition.resolve_fields(code)
+        backing = fields[ops[1].df["field"].value]
+        length = fields[ops[3].df["field"].value]
+        return (
+            obj != 0
+            and size not in (0, obj)
+            and func.regs[obj].resolve(code) == ret
+            and ops[1].df["obj"].value == obj
+            and ops[1].df["src"].value == 0
+            and backing.name.resolve(code) == "array"
+            and backing.type.resolve(code).kind.value == Type.Kind.ARRAY.value
+            and ops[2].df["array"].value == 0
+            and ops[3].df["obj"].value == obj
+            and ops[3].df["src"].value == size
+            and length.name.resolve(code) == "length"
+            and length.type.resolve(code).kind.value == Type.Kind.I32.value
+            and ops[4].df["ret"].value == obj
+        )
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        return False
+
+
+def _is_arrayobj(code: Bytecode, typ: Type) -> bool:
+    definition = typ.definition
+    return isinstance(definition, Obj) and definition.name.resolve(code) == "hl.types.ArrayObj"
+
+
+def virtual_field_elem_types(code: Bytecode) -> Dict[Tuple[int, str], Type]:
+    """The element type of each erased-array (`ArrayObj`) field of a structure, by `id` of the
+    structure's definition and the field's name.
+
+    A structure's field type says only `ArrayObj`; the `T` of its `Array<T>` survives in the
+    `alloc_array(T, n)` that built each array stored into the field. Only stores of arrays
+    allocated in straight-line code before them count; arrays of another provenance are silent,
+    and fields whose stores disagree (two structures of one layout) stay erased."""
+    cached = code._virtual_field_elem_types
+    if cached is not None:
+        return cached
+    found: Dict[Tuple[int, str], Optional[Type]] = {}
+    wrappers: Dict[int, bool] = {}
+    for func in code.functions:
+        ops = func.ops
+        targets: set[int] = set()
+        for i, op in enumerate(ops):
+            df = op.df
+            if "offset" in df:
+                targets.add(i + 1 + df["offset"].value)
+            if op.op == "Switch":
+                targets.update(i + 1 + offset.value for offset in df["offsets"].value)
+        # Per register, what it holds: a `Type` value, a native array of that element type, or an
+        # ArrayObj backed by one.
+        types: Dict[int, Type] = {}
+        natives: Dict[int, Type] = {}
+        arrays: Dict[int, Type] = {}
+        for i, op in enumerate(ops):
+            if i in targets:
+                types.clear()
+                natives.clear()
+                arrays.clear()
+            df = op.df
+            name = op.op
+            if name == "SetField":
+                target = func.regs[df["obj"].value].resolve(code).definition
+                if isinstance(target, Virtual):
+                    member = target.fields[df["field"].value]
+                    if _is_arrayobj(code, member.type.resolve(code)):
+                        key = (id(target), member.name.resolve(code))
+                        elem = arrays.get(df["src"].value)
+                        if elem is not None:
+                            found[key] = elem if found.get(key, elem) == elem else None
+                continue
+            dst = df.get("dst")
+            if dst is None or name == "Setref":
+                continue
+            reg = dst.value
+            value: Optional[Type] = None
+            held = None
+            if name == "Type":
+                held, value = types, df["ty"].resolve(code)
+            elif name == "Mov":
+                src = df["src"].value
+                for table in (types, natives, arrays):
+                    if src in table:
+                        held, value = table, table[src]
+            elif name in ("Call1", "Call2"):
+                callee = df["fun"].resolve(code)
+                if (
+                    name == "Call2"
+                    and isinstance(callee, Native)
+                    and callee.name.resolve(code) == "alloc_array"
+                    and df["arg0"].value in types
+                ):
+                    held, value = natives, types[df["arg0"].value]
+                elif name == "Call1" and df["arg0"].value in natives:
+                    index = df["fun"].value
+                    if index not in wrappers:
+                        wrappers[index] = is_arrayobj_alloc(code, callee)
+                    if wrappers[index]:
+                        held, value = arrays, natives[df["arg0"].value]
+            for table in (types, natives, arrays):
+                table.pop(reg, None)
+            if held is not None and value is not None:
+                held[reg] = value
+    result: Dict[Tuple[int, str], Type] = {}
+    for key, elem in found.items():
+        # Dynamic (`[1, "a"]`) says nothing a plain `Array<Dynamic>` wouldn't, and an array of
+        # arrays would need its inner element type too.
+        if elem is None or elem.kind.value in (Type.Kind.DYN.value, Type.Kind.VOID.value):
+            continue
+        if isinstance(elem.definition, Obj) and elem.definition.name.resolve(code) in (
+            "hl.types.ArrayObj",
+            "hl.types.ArrayDyn",
+        ):
+            continue
+        result[key] = elem
+    code._virtual_field_elem_types = result
+    return result
+
+
 def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
     """Render retained signatures, falling back to the existing erased type map.
 
@@ -607,6 +751,13 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 stored = _stored_function_fields(code).get(key, set())
                 declared: set[str] = set()
                 dynamic = typeinit.dynamic_members(code, definition)
+                elem_types = virtual_field_elem_types(code)
+
+                def field_type(name: str, ftype: Type) -> str:
+                    # An erased `Array<T>` field: `Array<Dynamic>` would be an ArrayDyn.
+                    elem = elem_types.get((key, name))
+                    return f"Array<{render(elem)}>" if elem is not None else render(ftype)
+
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)
                     # An interface redeclaring a field of one it extends lists both: the first,
@@ -617,9 +768,9 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                     fdef = ftype.definition
                     if name in accessors and not isinstance(fdef, Fun):
                         setter = "set" if "set" in accessors[name] else "null"
-                        members.append(f"var {name}(get, {setter}): {render(ftype)};")
+                        members.append(f"var {name}(get, {setter}): {field_type(name, ftype)};")
                     elif name in omitted and ftype.kind.value not in _BASIC_KINDS:
-                        members.append(f"@:optional var {name}: {render(ftype)};")
+                        members.append(f"@:optional var {name}: {field_type(name, ftype)};")
                     elif isinstance(fdef, Fun) and name not in stored:
                         params = ", ".join(
                             f"a{i}: {render(a.resolve(code))}" for i, a in enumerate(fdef.args)
@@ -629,7 +780,7 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                     else:
                         nullable = ftype.kind.value not in _BASIC_KINDS
                         optional = "@:optional " if has_optional and nullable else ""
-                        members.append(f"{optional}var {name}: {render(ftype)};")
+                        members.append(f"{optional}var {name}: {field_type(name, ftype)};")
                 return f"{{ {' '.join(members)} }}" if members else "{}"
             if isinstance(definition, Abstract):
                 name = definition.name.resolve(code).replace('"', '\\"')
