@@ -1307,12 +1307,8 @@ def _expression_to_haxe(
             target_str = _expression_to_haxe(expr.target, code, ir_function)
         target_type = expr.target.get_type()
         type_name = disasm.type_name(code, target_type)
-        if (
-            isinstance(expr.target, IRCast)
-            and isinstance(target_type.definition, Virtual)
-            and isinstance(expr.target.expr.get_type().definition, Obj)
-        ):
-            # A class converted to an interface to read one of its fields: the class itself has no such field.
+        if isinstance(expr.target, IRCast) and isinstance(target_type.definition, Virtual):
+            # A class or Dynamic value viewed as an interface to read one of its fields: the value itself has no such field.
             target_str = f"(cast {target_str} : {disasm._haxe_annotation(code, target_type)})"
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
             # A typed HL static-storage access must stay statically visible to
