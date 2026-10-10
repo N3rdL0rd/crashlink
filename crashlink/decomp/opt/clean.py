@@ -1141,6 +1141,20 @@ class IRTernaryRecovery(TraversingIROptimizer):
         if len(true_stmts) != 1 or len(false_stmts) != 1:
             return None
         t, f = true_stmts[0], false_stmts[0]
+        # A nested `if` arm that is itself a recovered ternary (an `else if`
+        # chain) is folded first: pre-order traversal reaches this outer
+        # statement before its nested block has been rewritten. A folded arm
+        # already had its own arms checked, and its condition is evaluated only
+        # in this branch, exactly as in the original, so it is not re-checked.
+        t_checked = f_checked = False
+        if isinstance(t, IRConditional):
+            folded_t = self._try_recover(t)
+            if folded_t is not None:
+                t, t_checked = folded_t, True
+        if isinstance(f, IRConditional):
+            folded_f = self._try_recover(f)
+            if folded_f is not None:
+                f, f_checked = folded_f, True
 
         # if (cond) return a; else return b;  ->  return (cond ? a : b)
         if (
@@ -1149,7 +1163,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
             and t.value is not None
             and f.value is not None
         ):
-            if self._safe_arm(t.value) and self._safe_arm(f.value):
+            if (t_checked or self._safe_arm(t.value)) and (f_checked or self._safe_arm(f.value)):
                 expr = self._make_ternary(stmt.condition, t.value, f.value, self._type_index(t.value))
                 out = IRReturn(self.func.code, expr)
                 out.adopt(stmt)
@@ -1161,7 +1175,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
             return None
         if not (isinstance(t.target, IRLocal) and _same_value(t.target, f.target)):
             return None
-        if not (self._safe_arm(t.expr) and self._safe_arm(f.expr)):
+        if not ((t_checked or self._safe_arm(t.expr)) and (f_checked or self._safe_arm(f.expr))):
             return None
         # The shared target's declared type is the ternary's result type.
         expr = self._make_ternary(stmt.condition, t.expr, f.expr, t.target.type)
