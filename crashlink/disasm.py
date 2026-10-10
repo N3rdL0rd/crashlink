@@ -631,6 +631,9 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
         types: Dict[int, Type] = {}
         natives: Dict[int, Type] = {}
         arrays: Dict[int, Type] = {}
+        # A `{}` the fields of a structure are set on by name before it is made that structure:
+        # the element type of each array set on it so far.
+        objects: Dict[int, Dict[str, Optional[Type]]] = {}
         for i, op in enumerate(ops):
             if i in targets:
                 types.clear()
@@ -644,6 +647,11 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
                     member = target.fields[df["field"].value]
                     if _is_arrayobj(code, member.type.resolve(code)):
                         record(("field", id(target), member.name.resolve(code)), arrays.get(df["src"].value))
+                continue
+            if name == "DynSet":
+                fields = objects.get(df["obj"].value)
+                if fields is not None:
+                    fields[df["field"].resolve(code)] = arrays.get(df["src"].value)
                 continue
             if name == "MakeEnum":
                 enum = func.regs[df["dst"].value].resolve(code).definition
@@ -667,6 +675,17 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
                     closures.setdefault(df["fun"].value, []).append(
                         (id(signature), 1 if name == "InstanceClosure" else 0)
                     )
+                if name == "InstanceClosure":
+                    # `f.bind(array)`: the bound value is the function's first parameter.
+                    record(("closure", df["fun"].value, 0), arrays.get(df["obj"].value))
+            elif name == "ToVirtual":
+                target = func.regs[df["dst"].value].resolve(code).definition
+                fields = objects.get(df["src"].value)
+                if isinstance(target, Virtual) and fields:
+                    for member in target.fields:
+                        field_name = member.name.resolve(code)
+                        if field_name in fields and _is_arrayobj(code, member.type.resolve(code)):
+                            record(("field", id(target), field_name), fields[field_name])
             dst = df.get("dst")
             if dst is None or name == "Setref":
                 continue
@@ -697,8 +716,11 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
                         held, value = arrays, natives[df["arg0"].value]
             for table in (types, natives, arrays):
                 table.pop(reg, None)
+            objects.pop(reg, None)
             if held is not None and value is not None:
                 held[reg] = value
+            if name == "New" and isinstance(func.regs[reg].resolve(code).definition, DynObj):
+                objects[reg] = {}
     # A closure's parameter takes what calls through its function type pass (past a bound receiver).
     passed: Dict[int, List[Tuple[int, Optional[Type]]]] = {}
     for key, elem in found.items():

@@ -209,3 +209,53 @@ class Main {
     assert "public var rows: Array<Array<Dynamic>>;" in files["src/Main.hx"]
     assert actual == expected
     assert _same_signature(original, recompiled, "Box.__constructor__")
+
+
+def test_structure_built_field_by_field_keeps_the_element_type_of_its_array_fields(tmp_path: Path) -> None:
+    # A literal leaving an optional field out is built as `{}` with each field set by name, then made the
+    # structure: the arrays set on it type the structure's fields.
+    source = """
+typedef Path = {name:String, pack:Array<String>, ?sub:String};
+
+class Main {
+    static function show(p:Path) {
+        return p.name + p.pack.length + p.pack[0];
+    }
+
+    static function main() {
+        var p:Path = {name: "x", pack: ["a", "b"]};
+        Sys.println(show(p));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "var pack: Array<String>;" in files["src/Main.hx"]
+    assert actual == expected
+    assert _same_signature(original, recompiled, "Main.show")
+    assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_closure_bound_to_a_captured_array_takes_its_element_type(tmp_path: Path) -> None:
+    # A local a closure writes is boxed in a one-element array the closure is bound to.
+    source = """
+class Main {
+    static function once(f:Void->Void):Void->Void {
+        return function() {
+            f();
+            f = () -> Sys.println("again");
+        };
+    }
+
+    static function main() {
+        var g = once(() -> Sys.println("first"));
+        g();
+        g();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    once = _function(original, "Main.once")
+    closure = next(op.df["fun"].resolve(original) for op in once.ops if op.op == "InstanceClosure")
+    lifted = next(f for f in recompiled.functions if "__anon_" in recompiled.full_func_name(f))
+    assert signature(original, closure).digest == signature(recompiled, lifted).digest
