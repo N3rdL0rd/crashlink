@@ -1921,7 +1921,7 @@ def _expression_to_haxe(
                 target_str = field.target.name
             else:
                 target_str = _expression_to_haxe(field.target, code, ir_function)
-            return f"(({target_str} : Dynamic<{disasm.type_to_haxe(target_name)}>).{field.field_name})"
+            return f"(({target_str} : Dynamic<{disasm._haxe_annotation(code, expr.get_type())}>).{field.field_name})"
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
