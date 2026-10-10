@@ -480,6 +480,30 @@ class Builder:
                 return _wrap((a & ((1 << width) - 1)) >> b, width)
         return None
 
+    def _boxed_int(self, node: Node) -> Optional[Node]:
+        """The int inside a value boxed from an I32 register."""
+        found = self.g.find(node)
+        if found.kind == "ToDyn" and found.attrs[0] == "I32":
+            return found.args[0]
+        return None
+
+    def _text_of(self, text: Node, length: Node, desc: str) -> Optional[Node]:
+        """`String.__alloc__(itos(n), len)`: the decimal text of `n`."""
+        raw, size = self.g.find(text), self.g.find(length)
+        if (
+            raw.kind in ("itos", "ftos")
+            and size.kind == raw.kind + "len"
+            and self.g.find(raw.args[0]) is self.g.find(size.args[0])
+        ):
+            return self.to_text(raw.args[0], "int" if raw.kind == "itos" else "float", desc)
+        return None
+
+    def to_text(self, number: Node, kind: str, desc: str) -> Node:
+        value = self.const_int(number) if kind == "int" else None
+        if value is not None:
+            return self.g.pure("str", (str(value),), nonnull=True, ty=desc)
+        return self.g.pure("tostring", (kind,), number, nonnull=True, ty=desc)
+
     def concat(self, a: Node, b: Node, desc: str) -> Node:
         """`String.__add__` is a pure function that prints null as "null", so a chain of them is
         the concatenation of its parts and empty parts vanish (unless that would leave a bare
@@ -491,7 +515,14 @@ class Builder:
                 parts.extend(operand.args)
             else:
                 parts.append(operand)
-        kept = [p for p in parts if not (p.kind == "str" and p.attrs[0] == "")]
+        merged: List[Node] = []
+        for part in parts:
+            if merged and merged[-1].kind == "str" and part.kind == "str":
+                joined = str(merged[-1].attrs[0]) + str(part.attrs[0])
+                merged[-1] = self.g.pure("str", (joined,), nonnull=True, ty=desc)
+            else:
+                merged.append(part)
+        kept = [p for p in merged if not (p.kind == "str" and p.attrs[0] == "")]
         if len(kept) == 0:
             return self.g.pure("str", ("",), nonnull=True, ty=desc)
         if len(kept) == 1:
@@ -604,6 +635,18 @@ class Builder:
             obj = self.reg(obj_reg, b)
             self.guard(b, obj)
             fname = self.namer.field(type_of(obj_reg), df["field"].value)
+            known = g.find(obj)
+            if known.kind == "str" and fname == "length" and self.reg_desc[obj_reg] == "obj:String":
+                # the length of a constant string, in UTF-16 units as HashLink counts them
+                text = str(known.attrs[0])
+                set_dst(
+                    g.pure(
+                        "int",
+                        (dst_desc(), len(text.encode("utf-16-le", "surrogatepass")) // 2),
+                        ty=dst_desc(),
+                    )
+                )
+                return
             set_dst(
                 g.pure(
                     "load",
@@ -699,13 +742,29 @@ class Builder:
         elif name in ("Call0", "Call1", "Call2", "Call3", "Call4", "CallN"):
             args = self._call_args(df, b)
             callee = self.namer.function(df["fun"].value)
-            if callee in OUT_ONLY and len(args) == 2:
-                # The second argument is a reference the native only writes through (the length of
-                # the text it produced): whatever the cell held before is never read.
-                out = self.g.find(args[1])
-                if out.kind == "ref":
-                    self.cell_pending.pop(self.cell_reg[cast(int, out.attrs[0])], None)
-            if callee == ("fn", "$String.__add__") and len(args) == 2:
+            out = self.g.find(args[1]) if len(args) == 2 else None
+            if callee in OUT_ONLY and out is not None and out.kind == "ref":
+                # The number-to-text natives only write through the reference (the length of the text
+                # they produced) and have no other effect, so the text and its length are values of the
+                # number: the pair `itos` + `String.__alloc__` is one pure conversion.
+                cell = self.cell_reg[cast(int, out.attrs[0])]
+                shape = "itos" if callee[1] == "std.itos" else "ftos"
+                number = args[0]
+                self.cell_pending[cell] = self.g.pure(shape + "len", (), number, ty=self.reg_desc[cell])
+                set_dst(self.g.pure(shape, (), number, nonnull=True, ty=dst_desc()))
+            elif (
+                callee == ("fn", "$String.__alloc__")
+                and len(args) == 2
+                and (text := self._text_of(args[0], args[1], dst_desc())) is not None
+            ):
+                set_dst(text)
+            elif (
+                callee == ("fn", "$Std.string")
+                and len(args) == 1
+                and (boxed := self._boxed_int(args[0])) is not None
+            ):
+                set_dst(self.to_text(boxed, "int", dst_desc()))
+            elif callee == ("fn", "$String.__add__") and len(args) == 2:
                 set_dst(self.concat(args[0], args[1], dst_desc()))
             else:
                 set_dst(self.effect(b, "call", (callee,), *args, ty=dst_desc()))
