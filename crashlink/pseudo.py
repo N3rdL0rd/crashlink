@@ -3242,7 +3242,8 @@ def _closure_context_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], st
     """Like `_closure_inline_body`, for a closure whose first parameter is an anonymous capture
     context (several captured variables travel in one enum value). The body reads each capture
     through the context's parameters; those reads render as `_CTX_MARK<index>_CTX_MARK`
-    placeholders for the creating function to replace with the captured expressions."""
+    placeholders for the creating function to replace with the captured expressions. A body of
+    several statements is kept as a block: `() -> { ... }`."""
     signature = helper_ir.func.type.resolve(helper_ir.code).definition
     if not isinstance(signature, Fun) or not signature.args or not helper_ir.locals:
         return None
@@ -3253,11 +3254,45 @@ def _closure_context_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], st
     setattr(helper_ir, "_ctx_param", ctx_name)
     try:
         entry = _closure_inline_body(helper_ir)
+        if entry is None:
+            entry = _closure_block_body(helper_ir)
     finally:
         setattr(helper_ir, "_ctx_param", None)
     if entry is None or re.search(rf"\b{re.escape(ctx_name)}\b", entry[1]):
         return None  # the context itself is used, not just read
     return entry
+
+
+def _closure_block_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str]]:
+    """(parameter names, block body) for an anonymous function of several statements, as the
+    `() -> { ... }` lambda it came from. The first parameter (the context) is not named; the
+    caller substitutes the captures for its reads. Rendered with `_ctx_param` set."""
+    signature = helper_ir.func.type.resolve(helper_ir.code).definition
+    if not isinstance(signature, Fun) or not signature.args:
+        return None
+    if any(
+        disasm._is_pos_infos(helper_ir.code, arg.resolve(helper_ir.code).definition)
+        for arg in signature.args[1:]
+    ):
+        return None  # a position parameter is filled in by the compiler; a lambda cannot declare it
+    text = _generate_function_pseudo(helper_ir)
+    lines = text.splitlines()
+    open_at = next(
+        (i for i, line in enumerate(lines) if line.rstrip().endswith("{") and "function " in line), None
+    )
+    if open_at is None or not lines[-1].strip() == "}":
+        return None
+    header = re.search(r"function [\w$]+\((.*)\)(?:: ([^{]*))? \{\s*$", lines[open_at])
+    if header is None:
+        return None
+    parts = [part.strip() for part in _split_params(header.group(1))]
+    declared = [part.split(":")[0].strip() for part in parts]
+    if len(declared) != len(signature.args):
+        return None
+    base = len(lines[open_at]) - len(lines[open_at].lstrip()) + 4
+    body = [line[base:] if line.startswith(" " * base) else line.lstrip() for line in lines[open_at + 1 : -1]]
+    indented = "\n".join(("    " + line) if line else line for line in body)
+    return declared, "{\n" + indented + "\n}"
 
 
 def _walk_ir(node: Optional[IRStatement]) -> Iterator[IRStatement]:
@@ -3297,6 +3332,15 @@ def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: Li
     return True
 
 
+def _shadows_captures(params: List[str], body: str, captured: List[IRLocal]) -> bool:
+    """Whether a closure's parameters or body declares a local with the name of a captured
+    variable. Such a name would hide the capture inside the lambda."""
+    names = {c.name for c in captured}
+    if names & {p.lstrip("?").split(" = ")[0] for p in params[1:]}:
+        return True
+    return any(re.search(rf"\bvar {re.escape(n)}\b", body) for n in names)
+
+
 def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[List[str], str]]) -> None:
     """The same as `_hoist_closure_contexts` for a context the optimizer already folded into the
     closure that is bound to it."""
@@ -3317,7 +3361,7 @@ def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[L
                 params, body = ctx_bodies[node.fun.findex.value]
                 if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
                     continue
-                if {c.name for c in captured} & {p.lstrip("?").split(" = ")[0] for p in params[1:]}:
+                if _shadows_captures(params, body, captured):
                     continue
                 if _captures_stable(ir_func, block, idx, captured):
                     node.captures = list(captured)
@@ -3404,7 +3448,6 @@ def _hoist_one_context(
     # that runs before the context on every path to it.
     if not _captures_stable(ir_func, block, idx, captured):
         return False
-    names = {c.name for c in captured}
     for closure in closures:
         entry = ctx_bodies.get(closure.fun.findex.value)
         if entry is None:
@@ -3412,8 +3455,8 @@ def _hoist_one_context(
         params, body = entry
         if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
             return False
-        if names & {p.lstrip("?").split(" = ")[0] for p in params[1:]}:
-            return False  # a parameter would shadow a captured variable
+        if _shadows_captures(params, body, captured):
+            return False  # a parameter or a local of the body would shadow a captured variable
     for closure in closures:
         closure.captures = list(captured)
     del block.statements[idx]
