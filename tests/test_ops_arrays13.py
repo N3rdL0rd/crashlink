@@ -82,3 +82,75 @@ class Main {
     assert actual == expected
     assert _same_signature(original, recompiled, "Main.make")
     assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_enum_array_parameter_keeps_the_element_type_of_the_arrays_built_into_it(tmp_path: Path) -> None:
+    # An enum constructor's `Array<T>` parameter is an `ArrayObj`; only the arrays it's built with say `T`.
+    source = """
+enum E {
+    A(a:Array<String>);
+    B(v:Int, cs:Array<E>);
+}
+
+class Main {
+    static function size(e:E):Int {
+        return switch e {
+            case A(a): a.length;
+            case B(v, cs):
+                var n = v;
+                for (c in cs) n += size(c);
+                n;
+        }
+    }
+
+    static function main() {
+        var a = [];
+        var b = [];
+        Sys.println(Type.enumEq(A(a), A(b)));
+        Sys.println(size(B(1, [A(["x"]), B(2, [A([])])])));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _same_signature(original, recompiled, "Main.size")
+    assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_closure_array_parameter_keeps_the_element_type_calls_through_its_function_type_pass(
+    tmp_path: Path,
+) -> None:
+    # `Array<String>->Void` is `fun(ArrayObj)->Void`: the field, and the closure stored into it, are typed
+    # by the arrays passed when calling through the field.
+    source = """
+class Main {
+    var foo:Array<String>->Void;
+    var result:Array<String>;
+
+    function new() {}
+
+    function setup() {
+        result = [];
+        foo = function(args:Array<String>) {
+            result.push(args.join(","));
+            args.push("foo");
+            result.push(args.join(","));
+        }
+    }
+
+    static function main() {
+        var m = new Main();
+        m.setup();
+        var args:Array<String> = [];
+        args.push("bar");
+        m.foo(args);
+        Sys.println(m.result);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "var foo: ((Array<String>) -> Void);" in files["src/Main.hx"]
+    assert "function(args: Array<String>)" in files["src/Main.hx"]
+    assert actual == expected
+    assert _same_signature(original, recompiled, "Main.setup")
+    assert _same_signature(original, recompiled, "Main.main")

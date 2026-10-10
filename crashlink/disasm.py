@@ -591,19 +591,32 @@ def _is_arrayobj(code: Bytecode, typ: Type) -> bool:
     return isinstance(definition, Obj) and definition.name.resolve(code) == "hl.types.ArrayObj"
 
 
-def virtual_field_elem_types(code: Bytecode) -> Dict[Tuple[int, str], Type]:
-    """The element type of each erased-array (`ArrayObj`) field of a structure, by `id` of the
-    structure's definition and the field's name.
+# A place an erased array is stored into or passed through whose type says only `ArrayObj`:
+# ("field", id(structure), name), ("enum", id(enum), construct, param), ("arg", id(function type), index)
+# and ("closure", findex, param) for a parameter of a function created as a closure.
+ArraySlot = Tuple[Any, ...]
 
-    A structure's field type says only `ArrayObj`; the `T` of its `Array<T>` survives in the
-    `alloc_array(T, n)` that built each array stored into the field. Only stores of arrays
-    allocated in straight-line code before them count; arrays of another provenance are silent,
-    and fields whose stores disagree (two structures of one layout) stay erased."""
-    cached = code._virtual_field_elem_types
+
+def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
+    """The element type of the erased arrays (`ArrayObj`) each structural slot holds: a structure's
+    field, an enum constructor's parameter, a function type's argument (and so the parameters of the
+    closures made of that type).
+
+    Those types say only `ArrayObj`; the `T` of the `Array<T>` survives in the `alloc_array(T, n)`
+    that built each array stored into the slot. Only arrays allocated in straight-line code before
+    the store count; arrays of another provenance are silent, and slots whose stores disagree (two
+    structures of one layout) stay erased."""
+    cached = code._erased_array_slots
     if cached is not None:
         return cached
-    found: Dict[Tuple[int, str], Optional[Type]] = {}
+    found: Dict[ArraySlot, Optional[Type]] = {}
+    closures: Dict[int, List[Tuple[int, int]]] = {}  # closure findex -> (id(function type), offset)
     wrappers: Dict[int, bool] = {}
+
+    def record(key: ArraySlot, elem: Optional[Type]) -> None:
+        if elem is not None:
+            found[key] = elem if found.get(key, elem) == elem else None
+
     for func in code.functions:
         ops = func.ops
         targets: set[int] = set()
@@ -630,11 +643,30 @@ def virtual_field_elem_types(code: Bytecode) -> Dict[Tuple[int, str], Type]:
                 if isinstance(target, Virtual):
                     member = target.fields[df["field"].value]
                     if _is_arrayobj(code, member.type.resolve(code)):
-                        key = (id(target), member.name.resolve(code))
-                        elem = arrays.get(df["src"].value)
-                        if elem is not None:
-                            found[key] = elem if found.get(key, elem) == elem else None
+                        record(("field", id(target), member.name.resolve(code)), arrays.get(df["src"].value))
                 continue
+            if name == "MakeEnum":
+                enum = func.regs[df["dst"].value].resolve(code).definition
+                construct = df["construct"].value
+                if isinstance(enum, Enum) and construct < len(enum.constructs):
+                    params = enum.constructs[construct].params
+                    for index, arg in enumerate(df["args"].value):
+                        if index < len(params) and _is_arrayobj(code, params[index].resolve(code)):
+                            record(("enum", id(enum), construct, index), arrays.get(arg.value))
+            elif name == "CallClosure":
+                signature = func.regs[df["fun"].value].resolve(code).definition
+                if isinstance(signature, Fun):
+                    for index, arg in enumerate(df["args"].value):
+                        if index < len(signature.args) and _is_arrayobj(
+                            code, signature.args[index].resolve(code)
+                        ):
+                            record(("arg", id(signature), index), arrays.get(arg.value))
+            elif name in ("StaticClosure", "InstanceClosure"):
+                signature = func.regs[df["dst"].value].resolve(code).definition
+                if isinstance(signature, Fun):
+                    closures.setdefault(df["fun"].value, []).append(
+                        (id(signature), 1 if name == "InstanceClosure" else 0)
+                    )
             dst = df.get("dst")
             if dst is None or name == "Setref":
                 continue
@@ -667,19 +699,26 @@ def virtual_field_elem_types(code: Bytecode) -> Dict[Tuple[int, str], Type]:
                 table.pop(reg, None)
             if held is not None and value is not None:
                 held[reg] = value
-    result: Dict[Tuple[int, str], Type] = {}
+    # A closure's parameter takes what calls through its function type pass (past a bound receiver).
+    passed: Dict[int, List[Tuple[int, Optional[Type]]]] = {}
+    for key, elem in found.items():
+        if key[0] == "arg":
+            passed.setdefault(key[1], []).append((key[2], elem))
+    for findex, made in closures.items():
+        for signature, offset in made:
+            for index, elem in passed.get(signature, []):
+                key = ("closure", findex, index + offset)
+                found[key] = elem if found.get(key, elem) == elem else None
+    result: Dict[ArraySlot, Type] = {}
     for key, elem in found.items():
         # Dynamic (`[1, "a"]`) says nothing a plain `Array<Dynamic>` wouldn't, and an array of
-        # arrays would need its inner element type too.
+        # erased arrays would need its inner element type too.
         if elem is None or elem.kind.value in (Type.Kind.DYN.value, Type.Kind.VOID.value):
             continue
-        if isinstance(elem.definition, Obj) and elem.definition.name.resolve(code) in (
-            "hl.types.ArrayObj",
-            "hl.types.ArrayDyn",
-        ):
+        if _is_arrayobj(code, elem):
             continue
         result[key] = elem
-    code._virtual_field_elem_types = result
+    code._erased_array_slots = result
     return result
 
 
@@ -692,6 +731,12 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
     """
     positions, callbacks = _trace_signature_types(code)
     active: set[int] = set()
+    slots = erased_array_slots(code)
+
+    def slot(key: ArraySlot, typ: Type) -> str:
+        # An erased `Array<T>` with a recovered `T`: `Array<Dynamic>` would be an ArrayDyn.
+        elem = slots.get(key) if _is_arrayobj(code, typ) else None
+        return f"Array<{render(elem)}>" if elem is not None else render(typ)
 
     def render(current: Type) -> str:
         definition = current.definition
@@ -701,7 +746,10 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
         active.add(key)
         try:
             if isinstance(definition, Fun):
-                args = [render(arg.resolve(code)) for arg in definition.args]
+                args = [
+                    slot(("arg", key, i), arg.resolve(code)) if not native else render(arg.resolve(code))
+                    for i, arg in enumerate(definition.args)
+                ]
                 if not native:
                     # HL passes an optional basic value by reference: `?Int` is `hl.Ref<Int>`.
                     for i, arg in enumerate(definition.args):
@@ -751,12 +799,9 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 stored = _stored_function_fields(code).get(key, set())
                 declared: set[str] = set()
                 dynamic = typeinit.dynamic_members(code, definition)
-                elem_types = virtual_field_elem_types(code)
 
                 def field_type(name: str, ftype: Type) -> str:
-                    # An erased `Array<T>` field: `Array<Dynamic>` would be an ArrayDyn.
-                    elem = elem_types.get((key, name))
-                    return f"Array<{render(elem)}>" if elem is not None else render(ftype)
+                    return slot(("field", key, name), ftype)
 
                 for f in definition.fields:
                     name, ftype = f.name.resolve(code), f.type.resolve(code)

@@ -2064,9 +2064,9 @@ class Bytecode(Serialisable):
         self._global_return_elem_types: Dict[int, Optional["Type"]] = {}
         # findex -> element type of each erased array parameter (by argument index), recovered from callers.
         self._global_param_elem_types: Dict[int, List[Optional["Type"]]] = {}
-        # (id(structure definition), field name) -> element type of the erased array the field holds; see
-        # disasm.virtual_field_elem_types.
-        self._virtual_field_elem_types: Optional[Dict[Tuple[int, str], "Type"]] = None
+        # Element type of the erased arrays a structure field, enum parameter, function type argument or
+        # closure parameter holds; see disasm.erased_array_slots.
+        self._erased_array_slots: Optional[Dict[Tuple[Any, ...], "Type"]] = None
         self._hxsl_shaders_cache: Optional[Any] = None
         # id(type definition) -> index in self.types; see type_index_of.
         self._type_index_by_def: Optional[Dict[int, int]] = None
@@ -2117,7 +2117,7 @@ class Bytecode(Serialisable):
         self._global_field_elem_types = {}
         self._global_return_elem_types = {}
         self._global_param_elem_types = {}
-        self._virtual_field_elem_types = None
+        self._erased_array_slots = None
 
     def invalidate_proto_field_cache(self) -> None:
         """

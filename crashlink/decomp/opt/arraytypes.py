@@ -169,7 +169,8 @@ def function_return_elem_type(code: Bytecode, func: Function) -> Optional[Type]:
 
 def function_param_elem_types(code: Bytecode, func: Function) -> List[Optional[Type]]:
     """The element type of each erased array parameter of `func` (indexed like its arguments), recovered
-    from the arguments its direct callers pass, in any class.
+    from the arguments its direct callers pass, in any class, or, without any, from what calls through
+    the function type of the closures made of it pass.
 
     Only the callers are lifted, on demand (and cached), so a callee in a class rendered before or without
     its callers gets the same answer as the callers' evidence. Callers that disagree, or pass nothing
@@ -208,10 +209,14 @@ def function_param_elem_types(code: Bytecode, func: Function) -> List[Optional[T
                     elem = _returned_elem_type(call.args[i], code, global_cache)
                     if elem is not None and not _is_uninformative(elem, code):
                         evidence[i].append(elem)
+    slots = disasm.erased_array_slots(code)
     for i in erased:
         found = evidence[i]
         if found and all(t == found[0] for t in found):
             result[i] = found[0]
+        elif not found:
+            # A closure's parameter: typed by what calls through its function type pass.
+            result[i] = slots.get(("closure", findex, i))
     return result
 
 
@@ -398,7 +403,7 @@ def _array_element_type(
             return None
         if isinstance(structure, Virtual):
             # A structure's array field: typed by the arrays the image stores into it.
-            return disasm.virtual_field_elem_types(code).get((id(structure), expr.field_name))
+            return disasm.erased_array_slots(code).get(("field", id(structure), expr.field_name))
     return None
 
 
@@ -635,6 +640,15 @@ def _recover_param_elem_types(ir_func: "IRFunction", code: Bytecode) -> None:
         local = ir_func.locals[index]
         if local.array_elem_type is None and _is_erased_array(local, code):
             local.array_elem_type = elem
+
+
+def recover_closure_param_elem_types(ir_func: "IRFunction") -> None:
+    """A lifted closure's erased array parameters, typed by what calls through its function type pass,
+    and the locals they are copied into. Fields keep what their own classes recovered."""
+    code = ir_func.code
+    _recover_param_elem_types(ir_func, code)
+    if any(local.array_elem_type is not None for local in ir_func.locals):
+        _propagate_array_assignments(ir_func.block, code, set(), dict(code._global_field_elem_types))
 
 
 def _is_arrayobj_alloc(expr: IRExpression, code: Bytecode) -> bool:

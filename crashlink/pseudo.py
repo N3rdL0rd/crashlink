@@ -91,7 +91,7 @@ from .decomp import (
     IRNullCoalesce,
 )
 from .decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
-from .decomp.opt.arraytypes import function_return_elem_type
+from .decomp.opt.arraytypes import function_return_elem_type, recover_closure_param_elem_types
 from .decomp.opt.clean import default_arg_regs, default_arg_value, overriding_default_arg_regs
 from .decomp.inline_calls import inline_index, is_inline_template
 
@@ -6468,7 +6468,13 @@ def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None, p
         params = []
         for i, pidx in enumerate(construct.params):
             ptype = pidx.resolve(code)
-            ptype_name = disasm._haxe_annotation(code, ptype)
+            # An erased `Array<T>` parameter, typed by the arrays the image builds the constructor with.
+            elem = disasm.erased_array_slots(code).get(("enum", id(enum_def), index, i))
+            ptype_name = (
+                f"Array<{disasm._haxe_annotation(code, elem)}>"
+                if elem is not None
+                else disasm._haxe_annotation(code, ptype)
+            )
             params.append(f"arg{i}: {ptype_name}")
         if params:
             lines.append(f"    {member_meta}{cname}({', '.join(params)});")
@@ -6857,6 +6863,7 @@ def _class_body(
         if findex in helper_irs:
             continue
         helper_ir = IRFunction(code, func)
+        recover_closure_param_elem_types(helper_ir)
         helper_irs[findex] = helper_ir
         pending.extend(_collect_anonymous_functions(helper_ir.block, code).values())
     all_methods = static_methods + methods + list(helper_irs.values())
