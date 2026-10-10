@@ -129,6 +129,11 @@ SAME = [
         "var x = 0; try { x = a(p); b(q); x = 5; } catch (e:Dynamic) { return x; } return x + 1;",
         "var y = 0; try { y = a(p); b(q); y = 5; } catch (err:Dynamic) { return y; } return y + 1;",
     ),
+    (
+        "a boxed number is never null",
+        "var d:Dynamic = p; if (d == null) return a(1); return a(2);",
+        "var d:Dynamic = p; return a(2);",
+    ),
     ("float constants", "return Std.int(3 / 2) + p;", "return 1 + p;"),
     (
         "a condition decided by a constant",
@@ -146,6 +151,11 @@ DIFFERENT = [
     ("subtraction operand order", "return p - q;", "return q - p;"),
     ("call order", "var x = a(p); var y = b(q); return x + y;", "var y = b(q); var x = a(p); return x + y;"),
     ("callee", "return a(p);", "return b(p);"),
+    (
+        "a nullable value may be null",
+        "var d:Null<Int> = p > 3 ? null : p; if (d == null) return a(1); return a(2);",
+        "var d:Null<Int> = p > 3 ? null : p; return a(2);",
+    ),
     (
         "a handler sees a different value written in the try block",
         "var x = 0; try { x = a(p); b(q); x = 5; } catch (e:Dynamic) { return x; } return x + 1;",

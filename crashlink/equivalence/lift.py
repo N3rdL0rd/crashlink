@@ -183,6 +183,8 @@ def _facts(
             facts[dst] = "null"
         elif name in nonnull:
             facts[dst] = "nonnull"
+        elif name == "ToDyn" and kind_of(op.df["src"].value) in (1, 2, 3, 4, 5, 6, 7):
+            facts[dst] = "nonnull"  # boxing a basic value makes a fresh, non-null dynamic
         elif name == "Bool":
             facts[dst] = int(op.df["value"].value)
         elif name == "Int":
@@ -423,55 +425,73 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
                 stack.append(s)
         return order, preds
 
-    # -- merge straight-line chains -------------------------------------------------------------
-    changed = True
-    while changed:
-        changed = False
-        order, preds = reach()
-        for a in order:
-            block = raw[a]
-            if block.term.kind != "jump" or block.ends_trap:
-                continue
-            b = block.term.succs[0]
-            if b == a or b == entry or preds.get(b, 0) != 1 or b not in raw:
-                continue
-            nxt = raw[b]
-            block.ops.extend(nxt.ops)
-            block.term = nxt.term
-            block.ends_trap = nxt.ends_trap
-            del raw[b]
-            changed = True
-            break
+    def merge_blocks() -> None:
+        """Merge straight-line chains, then blocks that are copies of each other."""
+        changed = True
+        while changed:
+            changed = False
+            order, preds = reach()
+            for a in order:
+                block = raw[a]
+                if block.term.kind != "jump" or block.ends_trap:
+                    continue
+                b = block.term.succs[0]
+                if b == a or b == entry or preds.get(b, 0) != 1 or b not in raw:
+                    continue
+                nxt = raw[b]
+                block.ops.extend(nxt.ops)
+                block.term = nxt.term
+                block.ends_trap = nxt.ends_trap
+                del raw[b]
+                changed = True
+                break
+        changed = True
+        while changed:
+            changed = False
+            seen_blocks: Dict[Tuple[object, ...], int] = {}
+            for start in reach()[0]:
+                if start == entry:
+                    seen_blocks[("entry",)] = start
+                    continue
+                block = raw[start]
+                term = block.term
+                key = (
+                    tuple(bytes(op.serialise()) for op in block.ops),
+                    term.kind,
+                    term.regs,
+                    term.pred,
+                    term.negated,
+                    term.succs,
+                    block.ends_trap,
+                )
+                twin = seen_blocks.get(key)
+                if twin is None:
+                    seen_blocks[key] = start
+                    continue
+                for other in raw.values():
+                    other.term.succs = tuple(twin if s == start else s for s in other.term.succs)
+                del raw[start]
+                changed = True
+                break
 
-    # -- merge blocks that are copies of each other (tail duplication) ------------------------------
-    changed = True
-    while changed:
-        changed = False
-        seen_blocks: Dict[Tuple[object, ...], int] = {}
+    merge_blocks()
+    # A condition on a value built in the blocks just merged in can now be decided.
+    again = True
+    while again:
+        again = False
         for start in reach()[0]:
-            if start == entry:
-                seen_blocks[("entry",)] = start
-                continue
             block = raw[start]
             term = block.term
-            key = (
-                tuple(bytes(op.serialise()) for op in block.ops),
-                term.kind,
-                term.regs,
-                term.pred,
-                term.negated,
-                term.succs,
-                block.ends_trap,
-            )
-            twin = seen_blocks.get(key)
-            if twin is None:
-                seen_blocks[key] = start
+            if term.kind != "cond":
                 continue
-            for other in raw.values():
-                other.term.succs = tuple(twin if s == start else s for s in other.term.succs)
-            del raw[start]
-            changed = True
-            break
+            facts = _facts(block.ops, namer.code, address_taken, lambda reg: namer.kind_of(regs[reg]))
+            bits = {3: 32, 4: 64}.get(namer.kind_of(regs[term.regs[0]]), 0)
+            taken = _decide(term.pred, term.regs, False, facts, bits)
+            if taken is not None:
+                block.term = Term("jump", succs=(term.succs[0] if taken else term.succs[1],))
+                again = True
+        if again:
+            merge_blocks()
 
     # -- canonical numbering ---------------------------------------------------------------------
     order: List[int] = []

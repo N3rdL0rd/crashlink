@@ -624,7 +624,12 @@ class Builder:
             converted = self.convert_const(
                 name, src_node, self.reg_kind[src_reg], self.reg_kind[df["dst"].value], dst_desc()
             )
-            set_dst(converted if converted is not None else g.pure(name, attrs, src_node, ty=dst_desc()))
+            boxes_value = name == "ToDyn" and self.reg_kind[src_reg] in (1, 2, 3, 4, 5, 6, 7)
+            set_dst(
+                converted
+                if converted is not None
+                else g.pure(name, attrs, src_node, nonnull=boxes_value, ty=dst_desc())
+            )
         elif name in ("SafeCast", "UnsafeCast"):
             src_reg = df["src"].value
             src, sdesc, ddesc = R("src"), self.reg_desc[src_reg], dst_desc()
