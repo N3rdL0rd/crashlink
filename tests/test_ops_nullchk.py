@@ -70,3 +70,20 @@ class Main {
     assert "(null : Dynamic).nonExistent" in files["src/Main.hx"]
     assert actual == expected
     assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
+
+
+def test_null_cast_stored_in_an_array_keeps_the_receiver_check_first(tmp_path: Path) -> None:
+    source = """
+class Foo {}
+
+class Main {
+    static function main() {
+        var arr:Array<Foo> = [];
+        arr[3] = cast null;
+        Sys.println(arr.length);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _ops(original, "Main.main") == _ops(recompiled, "Main.main")
