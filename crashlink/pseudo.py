@@ -5724,6 +5724,7 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
     seen: Set[int] = set()
     pattern_locals: Set[str] = set()
     unbound = _unbound_reads(root)
+    catch_bindings: Set[int] = set()
 
     def collect_pattern(pattern: IREnumPattern) -> None:
         for slot in pattern.slots.values():
@@ -5736,6 +5737,12 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
         if id(stmt) in seen:
             return
         seen.add(id(stmt))
+        if isinstance(stmt, IRTryCatch):
+            # A catch binding is declared by its own `catch (name: T)` clause. Hoisting it
+            # would merge it with an unrelated same-named local of another type.
+            for binding in [stmt.catch_local, *(local for local, _ in stmt.extra_catches)]:
+                if binding is not None:
+                    catch_bindings.add(id(binding))
         if isinstance(stmt, IRSwitch):
             for pattern in stmt.enum_patterns.values():
                 collect_pattern(pattern)
@@ -5755,7 +5762,7 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
                 if captures:
                     pattern_locals.update(capture for capture, local in captures if local is None)
         if isinstance(stmt, IRLocal):
-            if stmt.name in pattern_locals:
+            if stmt.name in pattern_locals or id(stmt) in catch_bindings:
                 return
             if stmt.native_elem_type is not None:
                 elem_haxe_type = disasm._haxe_annotation(stmt.code, stmt.native_elem_type)
