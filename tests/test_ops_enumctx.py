@@ -37,5 +37,28 @@ class Main {
     files, expected, actual, _, _ = roundtrip(tmp_path, source)
     assert actual == expected
     text = files["src/Main.hx"]
-    assert "__ClosureCtx" in text
+    assert "__ClosureCtx" not in text
     assert "Type.enumParameters" not in text
+
+
+def test_block_lambda_capturing_several_variables_keeps_its_captures_inline(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function run(arr:Array<Dynamic>, multiplier:Int):Int {
+        var doSomething = function() {
+            var mul:Int = multiplier;
+            arr.push({});
+            return arr.length + mul;
+        };
+        return doSomething();
+    }
+    static function main() {
+        Sys.println(run([], 1));
+    }
+}
+"""
+    files, expected, actual, _, _ = roundtrip(tmp_path, source)
+    assert actual == expected
+    text = files["src/Main.hx"]
+    assert "__ClosureCtx" not in text
+    assert "-> {" in text
