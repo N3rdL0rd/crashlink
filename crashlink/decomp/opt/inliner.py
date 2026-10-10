@@ -2294,6 +2294,10 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                     or self._count_local_reads(next_stmt, temp_local) > 1
                                 )
                             )
+                            and not (
+                                isinstance(expr_to_inline, IRField)
+                                and self._count_local_reads(next_stmt, temp_local) > 1
+                            )
                             and (
                                 pure_copy_kill
                                 or rebinds
