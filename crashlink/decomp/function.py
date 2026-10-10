@@ -1800,6 +1800,7 @@ class IRFunction:
                 dst_local = self.locals[op.df["dst"].value]
                 src_local = source_locals[op.df["src"].value]
                 cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
+                cast_expr.unsafe = op.op == "UnsafeCast"
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
             elif op.op == "GetArray":
                 dst_local = self.locals[op.df["dst"].value]

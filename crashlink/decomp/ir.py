@@ -1335,6 +1335,8 @@ class IRCast(IRExpression):
         self.expr = expr
         # Written as `cast e`: the value takes whatever type its context asks for.
         self.untyped = False
+        # An UnsafeCast (not a SafeCast): the compiler read a Dynamic<T> as T, unchecked.
+        self.unsafe = False
 
     def get_type(self) -> Type:
         return self.target_type_idx.resolve(self.code)

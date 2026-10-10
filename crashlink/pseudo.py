@@ -1324,7 +1324,7 @@ def _expression_to_haxe(
                 code,
                 ir_function,
             )
-        if expr.dynamic and isinstance(target_type.definition, Obj):
+        if expr.dynamic and isinstance(target_type.definition, (Obj, Virtual)):
             # The compiler read the field of a Dynamic that holds this class's instance.
             return f"({target_str} : Dynamic).{expr.field_name}"
         if type_name == "String" and expr.field_name == "bytes":
@@ -1858,6 +1858,14 @@ def _expression_to_haxe(
             if isinstance(expr.get_type().definition, Obj):
                 return "cast null"  # a SafeCast of the Dynamic null to a class
         source_name = disasm.type_name(code, expr.expr.get_type())
+        if expr.unsafe and isinstance(expr.expr, IRField) and expr.expr.dynamic:
+            # An unchecked read of a Dynamic<T> field: the compiler types the read through Dynamic<T>.
+            field = expr.expr
+            if isinstance(field.target, IRLocal):
+                target_str = field.target.name
+            else:
+                target_str = _expression_to_haxe(field.target, code, ir_function)
+            return f"(({target_str} : Dynamic<{disasm.type_to_haxe(target_name)}>).{field.field_name})"
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
