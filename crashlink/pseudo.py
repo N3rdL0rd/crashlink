@@ -3774,7 +3774,6 @@ def _capture_box_uses(
 def _find_capture_boxes(
     ir_func: IRFunction,
     helper_irs: Dict[int, IRFunction],
-    inline_bodies: Dict[int, Tuple[List[str], str]],
 ) -> Dict[str, List[IRFunction]]:
     """Capture boxes of `ir_func`, with the closure helpers sharing each.
 
@@ -3807,8 +3806,7 @@ def _find_capture_boxes(
         for closure in consumers:
             findex = closure.fun.findex.value
             helper = helper_irs.get(findex)
-            entry = inline_bodies.get(findex)
-            if helper is None or entry is None or not entry[0] or entry[0][0] != name:
+            if helper is None or not helper.locals or helper.locals[0].name != name:
                 break
             h_total, h_accounted, h_defs, h_writes, h_consumers = _capture_box_uses(
                 helper.block, name, code, helper
@@ -6710,7 +6708,7 @@ def _class_body(
         if body is not None:
             inline_bodies[findex] = body
     for ir_func in static_methods + methods:
-        for name, helpers in _find_capture_boxes(ir_func, helper_irs, inline_bodies).items():
+        for name, helpers in _find_capture_boxes(ir_func, helper_irs).items():
             setattr(ir_func, "_unboxed_captures", getattr(ir_func, "_unboxed_captures", frozenset()) | {name})
             for helper_ir in helpers:
                 setattr(helper_ir, "_unboxed_captures", frozenset({name}))
