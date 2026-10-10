@@ -2062,6 +2062,8 @@ class Bytecode(Serialisable):
         self._global_field_elem_types: Dict[Tuple[str, str], "Type"] = {}
         # findex -> element type of the erased array a function returns, if recovered; see decomp.opt.arraytypes.
         self._global_return_elem_types: Dict[int, Optional["Type"]] = {}
+        # findex -> element type of each erased array parameter (by argument index), recovered from callers.
+        self._global_param_elem_types: Dict[int, List[Optional["Type"]]] = {}
         self._hxsl_shaders_cache: Optional[Any] = None
         # id(type definition) -> index in self.types; see type_index_of.
         self._type_index_by_def: Optional[Dict[int, int]] = None
@@ -2111,6 +2113,7 @@ class Bytecode(Serialisable):
         self._hxsl_shaders_cache = None
         self._global_field_elem_types = {}
         self._global_return_elem_types = {}
+        self._global_param_elem_types = {}
 
     def invalidate_proto_field_cache(self) -> None:
         """
