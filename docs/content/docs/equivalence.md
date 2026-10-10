@@ -28,8 +28,12 @@ In order: every call, store, allocation and every check that can throw (null der
 2. `build` runs the function symbolically into a value graph. Registers become SSA values (Braun et al.), memory becomes a single chain of effects, pure values are shared by structure.
 3. `digest` hashes the graph. Values that depend on themselves around a loop (phis) are hashed by colour refinement, which for ordered, labelled graphs is exactly bisimulation: equal digests mean the values unfold to the same infinite term.
 
+## Exceptions
+
+A handler starts from "one of the histories the protected block can have when something is raised". A register the block writes and the handler reads is the value written last before that point: it is hashed as the set of (history, value) pairs, so moving a write across a call that may throw changes the signature.
+
 ## Limits
 
-A function is given no signature (and never compares equal) when it uses inline assembly, has irreducible control flow, when an exception handler reads a register written inside its `try` block, or when something it refers to has no stable name. A function's own type is part of its signature. Calls are compared by callee name, so the callees' own signatures have to be compared as well. Integer division by zero is treated as defined. Unrelated mutations that alias (two names for one object) are ordered conservatively, which only costs completeness.
+A function is given no signature (and never compares equal) when it uses inline assembly, has irreducible control flow, when a block can run both inside and outside one `try`, when a catch handler has several entries, or when something it refers to has no stable name. A function's own type is part of its signature. Calls are compared by callee name, so the callees' own signatures have to be compared as well. Integer division by zero is treated as defined. Unrelated mutations that alias (two names for one object) are ordered conservatively, which only costs completeness.
 
 `python -m pytest tests/test_equivalence.py` checks both directions on compiled Haxe: pairs that differ only in names, temporaries, folding, operand order or branch layout must match; pairs that differ in a constant, operator, call order, a dropped store or a changed loop bound must not.

@@ -33,7 +33,7 @@ from typing import Dict, Optional, Set, Tuple
 from ..core import Bytecode, Function
 from .build import build
 from .digest import digest
-from .lift import Unsupported, check_trap_handlers, lift
+from .lift import Unsupported, lift
 from .names import Namer
 
 __all__ = ["Signature", "Signer", "signature", "equivalent", "Unsupported"]
@@ -96,7 +96,6 @@ class Signer:
         try:
             regs = [t.value for t in func.regs]
             lifted = lift(func.ops, regs, namer)
-            check_trap_handlers(lifted)
             built = build(code, func, lifted, namer, self.strict, self.ignore_positions)
             if namer.unstable:
                 raise Unsupported("a reference with no stable name")

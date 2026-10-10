@@ -7,7 +7,7 @@ from typing import Dict, List
 
 from ..core import Bytecode, Function
 from .build import Built, build
-from .lift import check_trap_handlers, lift
+from .lift import lift
 from .names import Namer
 from .terms import Node
 
@@ -17,7 +17,6 @@ def explain(code: Bytecode, func: Function, *, strict: bool = True, depth: int =
 
     namer = Namer(code, _signer(code, strict, True)._anon_digest)
     lifted = lift(func.ops, [t.value for t in func.regs], namer)
-    check_trap_handlers(lifted)
     built = build(code, func, lifted, namer, strict)
     return f"type: {namer.type_index(func.type.value)}\n" + render(built, depth)
 

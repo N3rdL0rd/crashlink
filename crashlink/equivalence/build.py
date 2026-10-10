@@ -126,6 +126,20 @@ class Builder:
         self.exit_mem: List[Optional[Node]] = [None] * self.nblocks
         self.term_nodes: List[List[Node]] = [[] for _ in range(self.nblocks)]
         self.undef = self.g.pure("undef", ())
+        self.enclosing: Dict[int, List[int]] = {}
+        for trap_id, info in lifted.traps.items():
+            for member in info.region:
+                self.enclosing.setdefault(member, []).append(trap_id)
+        self.trap_mems: Dict[int, List[Node]] = {trap_id: [] for trap_id in lifted.traps}
+        self.trap_writes: Dict[int, Dict[int, List[Tuple[Node, Node]]]] = {
+            trap_id: {r: [] for r in info.needed} for trap_id, info in lifted.traps.items()
+        }
+        self.processed: Set[int] = set()
+        self.handler_of: Dict[int, int] = {
+            block.term.succs[1]: trap_id
+            for trap_id, block in enumerate(lifted.blocks)
+            if block.term.kind == "trap"
+        }
         self._find_cells()
         self._find_ref_reach()
         self._find_handlers()
@@ -270,7 +284,12 @@ class Builder:
                 node = self.materialise(node, b)
             self.cell_pending[r] = node  # held back: only a reference to the cell can observe it
         else:
+            enclosing = [t for t in self.enclosing.get(b, ()) if r in self.trap_writes[t]]
+            if enclosing and self.g.find(node).id in self.pending:
+                node = self.materialise(self.g.find(node), b)
             self.write(r, b, node)
+            for trap_id in enclosing:
+                self.trap_writes[trap_id][r].append((self.read(MEM, b), node))
 
     def effect(
         self, b: int, kind: str, attrs: Tuple[object, ...], *args: Node, nonnull: bool = False, ty: str = ""
@@ -280,6 +299,8 @@ class Builder:
                 found = self.g.find(arg)
                 if found.kind == "ref":
                     self.flush_cell(self.cell_reg[cast(int, found.attrs[0])], b)
+        for trap_id in self.enclosing.get(b, ()):
+            self.trap_mems[trap_id].append(self.read(MEM, b))  # an exception here is raised with this history
         node = self.g.effect(kind, attrs, self.read(MEM, b), *args, nonnull=nonnull, ty=ty)
         self.write(MEM, b, node)
         return node
@@ -829,10 +850,33 @@ class Builder:
         self.namer.unstable = True
         return ("?", str(construct))
 
+    def _handler_state(self, trap_id: int) -> Dict[Var, Node]:
+        """What the handler of a trap sees on entry: the exception, a history that is one of those
+        the protected region can have when something is raised, and for each register the region
+        writes that the handler reads, the value last written before that point."""
+        info = self.lifted.traps[trap_id]
+        if not info.region <= self.processed:
+            raise Unsupported("a catch handler that runs before its protected block")
+        g = self.g
+        exc_reg = self.lifted.blocks[trap_id].term.regs[0]
+        state: Dict[Var, Node] = {exc_reg: g.pure("exc", (trap_id,), nonnull=True, ty=self.reg_desc[exc_reg])}
+        mems = list({g.find(m).id: g.find(m) for m in self.trap_mems[trap_id]}.values())
+        state[MEM] = g.pure("catchmem", (trap_id,), *mems) if mems else g.pure("excmem", (trap_id,))
+        for r in sorted(info.needed):
+            pairs: List[Node] = []
+            for mem, value in [(self.read(MEM, trap_id), self.read(r, trap_id))] + self.trap_writes[trap_id][
+                r
+            ]:
+                pairs.extend((mem, value))
+            state[r] = g.pure("catchval", (self.reg_desc[r],), *pairs, ty=self.reg_desc[r])
+        return state
+
     # -- driving ----------------------------------------------------------------------------------
 
     def process(self, b: int) -> None:
         block: Block = self.lifted.blocks[b]
+        if b in self.handler_of:
+            self.overrides[b] = self._handler_state(self.handler_of[b])
         self.cur[b] = dict(self.overrides.get(b, {}))
         # A value that was non-null at the end of every predecessor already processed is non-null
         # here; the ones not processed yet are back edges, which only add to what the loop entry knew.
@@ -858,13 +902,10 @@ class Builder:
             nodes.append(self.reg(term.regs[0], b))
         self.flush(b)
         self.exit_mem[b] = self.read(MEM, b)
-        if term.kind == "trap":
-            exc_reg = term.regs[0]
-            handler = term.succs[1]
-            self.overrides[handler] = {
-                exc_reg: self.g.pure("exc", (b,), nonnull=True, ty=self.reg_desc[exc_reg]),
-                MEM: self.g.pure("excmem", (b,)),
-            }
+        if term.kind in ("throw", "rethrow"):
+            for trap_id in self.enclosing.get(b, ()):
+                self.trap_mems[trap_id].append(self.read(MEM, b))
+        self.processed.add(b)
         self.term_nodes[b] = nodes
         self.facts_out[b] = set(self.facts)
         for s in dict.fromkeys(term.succs):
@@ -892,6 +933,39 @@ def rpo(lifted: Lifted) -> List[int]:
             post.append(node)
     assert len(seen) <= n
     return post[::-1]
+
+
+def processing_order(lifted: Lifted, order: List[int]) -> List[int]:
+    """Blocks in an order where every block follows the predecessors that do not reach it by a back
+    edge, and a catch handler follows every block of the region it protects."""
+    position = {b: i for i, b in enumerate(order)}
+    edges: Dict[int, Set[int]] = {b: set() for b in order}
+    for b in order:
+        for s in lifted.blocks[b].term.succs:
+            if position[s] > position[b]:  # forward edges only
+                edges[b].add(s)
+    for trap_id, info in lifted.traps.items():
+        handler = lifted.blocks[trap_id].term.succs[1]
+        for member in info.region:
+            if member != handler:
+                edges[member].add(handler)
+    indegree = {b: 0 for b in order}
+    for b in order:
+        for s in edges[b]:
+            indegree[s] += 1
+    ready = sorted((b for b in order if indegree[b] == 0), key=lambda x: position[x])
+    result: List[int] = []
+    while ready:
+        b = ready.pop(0)
+        result.append(b)
+        for s in sorted(edges[b], key=lambda x: position[x]):  # type: ignore[arg-type]
+            indegree[s] -= 1
+            if indegree[s] == 0:
+                ready.append(s)
+                ready.sort(key=lambda x: position[x])
+    if len(result) != len(order):
+        raise Unsupported("a catch handler entangled with the block it protects")
+    return result
 
 
 def check_reducible(lifted: Lifted, order: List[int]) -> None:
@@ -952,7 +1026,7 @@ def build(
             builder.seal(0)
         order = rpo(lifted)
         check_reducible(lifted, order)
-        for b in order:
+        for b in processing_order(lifted, order):
             builder.process(b)
         g.simplify_phis()
         built = Built(g, lifted)

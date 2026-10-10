@@ -53,11 +53,24 @@ class Block:
 
 
 @dataclass
+class TrapInfo:
+    """The protected region of one `Trap`."""
+
+    region: Set[int]
+    """Blocks that run while the handler is installed."""
+    needed: Set[int]
+    """Registers the handler reads that the region writes: which value it sees depends on where
+    the exception was raised."""
+
+
+@dataclass
 class Lifted:
     blocks: List[Block]
     """In canonical order; block 0 is the entry."""
     preds: List[List[int]]
     """Canonical ids of each block's distinct predecessors, ascending."""
+    traps: Dict[int, TrapInfo] = field(default_factory=dict)
+    """By the id of the block that ends in the `Trap`."""
 
 
 def uses_defs(op: Opcode) -> Tuple[List[int], List[int]]:
@@ -484,7 +497,9 @@ def lift(func_ops: List[Opcode], regs: List[int], namer: Namer) -> Lifted:
     for i, b in enumerate(blocks):
         for s in b.term.succs:
             preds_list[s].add(i)
-    return Lifted(blocks, [sorted(p) for p in preds_list])
+    lifted = Lifted(blocks, [sorted(p) for p in preds_list])
+    lifted.traps = trap_regions(lifted)
+    return lifted
 
 
 def liveness(lifted: Lifted) -> Tuple[List[Set[int]], List[Set[int]], List[Set[int]]]:
@@ -516,19 +531,16 @@ def liveness(lifted: Lifted) -> Tuple[List[Set[int]], List[Set[int]], List[Set[i
     return live_in, live_out, defs
 
 
-def check_trap_handlers(lifted: Lifted) -> None:
-    """Handlers read the registers as they were when the trap was set. That holds only if no
-    register the handler needs is written inside the protected region; otherwise which value
-    the handler sees depends on where the exception was raised, which this model cannot name."""
+def trap_regions(lifted: Lifted) -> Dict[int, TrapInfo]:
+    """For each `Trap`: the blocks it protects and the registers its handler needs that they write."""
     blocks = lifted.blocks
     live_in, _live_out, defs = liveness(lifted)
-    for block in blocks:
+    infos: Dict[int, TrapInfo] = {}
+    for trap_id, block in enumerate(blocks):
         if block.term.kind != "trap":
             continue
         body, handler = block.term.succs
-        needed = set(live_in[handler]) - {block.term.regs[0]}
-        if not needed:
-            continue
+        region: Set[int] = set()
         written: Set[int] = set()
         seen: Set[Tuple[int, int]] = set()
         stack = [(body, 0)]
@@ -537,6 +549,7 @@ def check_trap_handlers(lifted: Lifted) -> None:
             if (cur, depth) in seen:
                 continue
             seen.add((cur, depth))
+            region.add(cur)
             written |= defs[cur]
             cb = blocks[cur]
             if cb.ends_trap:
@@ -549,5 +562,6 @@ def check_trap_handlers(lifted: Lifted) -> None:
             else:
                 for s in cb.term.succs:
                     stack.append((s, depth))
-        if needed & written:
-            raise Unsupported("a handler reads a register written inside its try block")
+        needed = (set(live_in[handler]) - {block.term.regs[0]}) & written
+        infos[trap_id] = TrapInfo(region, needed)
+    return infos

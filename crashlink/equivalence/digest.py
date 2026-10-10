@@ -55,7 +55,12 @@ class _Digester:
                     assert isinstance(coeffs, tuple)
                     self.memo[node.id] = _h(("lin", desc, const, tuple(sorted(zip(coeffs, children)))))
                     continue
-                if node.kind in COMMUTATIVE:
+                if node.kind == "catchmem":
+                    children = sorted(set(children))  # one of these histories
+                elif node.kind == "catchval":
+                    # (history, value) pairs: the value is the one written before that point
+                    children = sorted(zip(children[0::2], children[1::2]))  # type: ignore[assignment]
+                elif node.kind in COMMUTATIVE:
                     children.sort()
                 self.memo[node.id] = _h((node.kind, node.attrs, tuple(children)))
                 continue

@@ -124,6 +124,11 @@ SAME = [
         "return Std.string(p).length + ('' + q).length;",
         "return ('' + p).length + Std.string(q).length;",
     ),
+    (
+        "a handler reads what the try block wrote",
+        "var x = 0; try { x = a(p); b(q); x = 5; } catch (e:Dynamic) { return x; } return x + 1;",
+        "var y = 0; try { y = a(p); b(q); y = 5; } catch (err:Dynamic) { return y; } return y + 1;",
+    ),
     ("float constants", "return Std.int(3 / 2) + p;", "return 1 + p;"),
     (
         "a condition decided by a constant",
@@ -141,6 +146,16 @@ DIFFERENT = [
     ("subtraction operand order", "return p - q;", "return q - p;"),
     ("call order", "var x = a(p); var y = b(q); return x + y;", "var y = b(q); var x = a(p); return x + y;"),
     ("callee", "return a(p);", "return b(p);"),
+    (
+        "a handler sees a different value written in the try block",
+        "var x = 0; try { x = a(p); b(q); x = 5; } catch (e:Dynamic) { return x; } return x + 1;",
+        "var x = 0; try { x = a(p); b(q); x = 6; } catch (e:Dynamic) { return x; } return x + 1;",
+    ),
+    (
+        "the write moves across the call that may throw",
+        "var x = 0; try { x = 1; a(p); x = 2; b(q); } catch (e:Dynamic) { return x; } return x;",
+        "var x = 0; try { x = 1; a(p); b(q); x = 2; } catch (e:Dynamic) { return x; } return x;",
+    ),
     ("converted constant", "return ('' + 12).length + p;", "return ('' + 123).length + p;"),
     ("modulo of constants", "return p + (13 % 5);", "return p + (13 % 6);"),
     ("converted value", "return Std.string(p).length;", "return Std.string(q).length;"),
