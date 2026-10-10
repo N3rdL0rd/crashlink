@@ -250,9 +250,11 @@ def _is_uninformative(elem_type: Type, code: Bytecode) -> bool:
     reads erased elements as Dyn all the time (any `arr[i]` feeding a Dynamic
     temp). Recording that would overwrite, or block, the concrete type the
     same array yields at a site where the compiler did type the element —
-    leaving one declaration narrowed and another not.
+    leaving one declaration narrowed and another not. An element that is an
+    erased array of its own would need its own element type; one that is an
+    `Array<Dynamic>` (ArrayDyn) is exactly that.
     """
-    if _array_type_name(elem_type, code) in _ERASED_ARRAY_TYPES:
+    if _array_type_name(elem_type, code) == "hl.types.ArrayObj":
         return True
     return elem_type.kind.value in (
         Type.Kind.DYN.value,

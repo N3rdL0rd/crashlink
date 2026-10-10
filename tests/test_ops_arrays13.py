@@ -183,3 +183,29 @@ class Main {
     assert actual == expected
     assert _same_signature(original, recompiled, "Main.main")
     assert _same_signature(original, recompiled, "Words_Impl_.joined")
+
+
+def test_class_field_of_dynamic_arrays_keeps_its_array_dyn_element_type(tmp_path: Path) -> None:
+    # `Array<Array<Dynamic>>` is an ArrayObj of ArrayDyn: the element type is fully known, not erased.
+    source = """
+class Box {
+    public var rows:haxe.ds.Vector<Array<Dynamic>>;
+
+    public function new(n:Int) {
+        rows = new haxe.ds.Vector(n);
+    }
+}
+
+class Main {
+    static function main() {
+        var b = new Box(Std.random(1) + 3);
+        var row:Array<Dynamic> = [1, "a"];
+        b.rows[1] = row;
+        Sys.println(b.rows.length + b.rows[1].length);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "public var rows: Array<Array<Dynamic>>;" in files["src/Main.hx"]
+    assert actual == expected
+    assert _same_signature(original, recompiled, "Box.__constructor__")
