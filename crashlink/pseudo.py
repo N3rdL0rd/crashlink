@@ -4829,24 +4829,37 @@ def _render_string_concat(expr: IRCall, code: Bytecode, ir_function: Optional[IR
     # conversion HL inserted is noise — as long as one operand still makes
     # the expression a string concatenation rather than arithmetic.
     anchored = any(isinstance(operand, IRConst) and isinstance(operand.value, str) for operand in operands)
+    # A non-conversion operand also types the chain as a string concatenation.
+    typed_concat = anchored or any(not isinstance(operand, IRStringConvert) for operand in operands)
     parts: List[Tuple[str, Any]] = []  # (kind, payload); kind in {"lit", "val"}
     interp_count = 0
-    for operand in operands:
+    # A leading int constant must stay a literal: `1 + 2 + ""` is arithmetic in Haxe. Once a
+    # string literal precedes it, a bare int is stringified by the chain itself.
+    started = False
+    for index, operand in enumerate(operands):
         if isinstance(operand, IRConst) and isinstance(operand.value, str):
             parts.append(("lit", operand.value))
+            started = True
             continue
-        if anchored and isinstance(operand, IRStringConvert):
+        if typed_concat and isinstance(operand, IRStringConvert):
             operand = operand.value
         if (
             anchored
+            and not started
             and isinstance(operand, IRConst)
             and not isinstance(operand.value, str)
             # A float prints differently in source (`0.0`) and as text (`0`).
             and operand.get_type().kind.value not in (Type.Kind.F32.value, Type.Kind.F64.value)
         ):
-            # A constant that is already being stringified reads better as
-            # part of the surrounding text than as an interpolation.
-            parts.append(("lit", _expression_to_haxe(operand, code, ir_function)))
+            text = _expression_to_haxe(operand, code, ir_function)
+            following = operands[index + 1] if index + 1 < len(operands) else None
+            if isinstance(following, IRConst) and isinstance(following.value, str):
+                # `3 + ""` stringifies the int itself; quoting it would fold into a literal.
+                parts.append(("val", (operand, text)))
+                interp_count += 1
+                continue
+            parts.append(("lit", text))
+            started = True
             continue
         simple = _expression_to_haxe(operand, code, ir_function)
         if isinstance(operand, (IRArithmetic, IRBoolExpr)):
