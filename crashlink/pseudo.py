@@ -1324,9 +1324,12 @@ def _expression_to_haxe(
                 code,
                 ir_function,
             )
-        if expr.dynamic:
+        if expr.dynamic and (
+            isinstance(target_type.definition, Obj) or disasm.type_name(code, expr.get_type()) == "Dyn"
+        ):
             # The compiler read a field through Dynamic. A null or structural receiver would
-            # otherwise type the access statically, so keep the Dynamic cast.
+            # otherwise type the access statically, so keep the Dynamic cast. A read the compiler
+            # typed itself (a method closure of a structure) is not one the cast belongs to.
             return f"({target_str} : Dynamic).{expr.field_name}"
         if type_name == "String" and expr.field_name == "bytes":
             return f"(@:privateAccess {target_str}.bytes)"
