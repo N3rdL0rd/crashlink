@@ -1874,12 +1874,22 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         is the last one in `block` (so nothing later in the same iteration
         reads it either, beyond the substitution already being performed
         there).
+
+        Otherwise the use may be followed by more statements, as long as no
+        read of `temp` survives anywhere: none in the rest of `block` before a
+        kill, and none in the whole function apart from those this define's
+        own kill already shadows (`_ScopedLocalLifetime.reads` stops scanning
+        `block` at the define, so a read it finds sits before it in `block`,
+        in another branch, in a loop condition or after the loop - every
+        place a stale cross-iteration value could reach).
         """
         statements = block.statements
-        if def_index + 2 != len(statements):
-            return False
         lifetime = _ScopedLocalLifetime(self.func.block)
-        return not any(lifetime.reads(stmt, temp) for stmt in statements[:def_index])
+        if def_index + 2 == len(statements):
+            return not any(lifetime.reads(stmt, temp) for stmt in statements[:def_index])
+        return lifetime.dead_in(statements[def_index + 2 :], temp) and not lifetime.reads(
+            self.func.block, temp
+        )
 
     def visit_block(self, block: IRBlock) -> None:
         if self.aggressive:

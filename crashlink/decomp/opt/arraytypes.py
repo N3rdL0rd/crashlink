@@ -359,12 +359,22 @@ def _record_cast_element_reads(
     """`(T)arr[i]` and `(T)arr.pop()`: the cast says what type the erased element is used as.
 
     The read itself is Dynamic, so only the cast reveals the element type.
+    An element read whose value is dereferenced in place (`f(arr[i].x)`, once
+    the temp it was read into has been inlined) is evidence the same way
+    `x = arr[i]` is: the field access only resolves statically on an element
+    of the type HL read it as.
     """
     pending: List[IRStatement] = [stmt]
     while pending:
         node = pending.pop()
         if isinstance(node, IRBlock):
             continue
+        if isinstance(node, IRField) and isinstance(node.target, IRArrayAccess):
+            try:
+                elem_type: Optional[Type] = node.target.get_type()
+            except Exception:
+                elem_type = None
+            _record_array_source(node.target.array, elem_type, code, global_cache)
         if isinstance(node, IRCast):
             src = node.expr
             array: Optional[IRExpression] = None
