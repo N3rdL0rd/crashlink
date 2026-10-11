@@ -32,7 +32,7 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, generics, mapargs, rtti_meta, hxbit, hxsl, typeinit
+from . import abstracts, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
 from .classgenerics import ScopeEntry, class_generics, method_root
 from .std_types import STD_TYPES
 from .decomp import (
@@ -2002,6 +2002,18 @@ def _expression_to_haxe(
                 for name, value in expr.expr.fields
             )
             return f"({inner} : {{ {members} }})"
+        if (
+            isinstance(target_def, Virtual)
+            and isinstance(source_def, Virtual)
+            and target_def is not source_def
+            and isinstance(expr.expr, IRCast)
+            and not expr.expr.untyped
+            and isinstance(expr.expr.expr.get_type().definition, Obj)
+        ):
+            # A class converted to one structure, then to another (`Iterable<Int>`, then the
+            # erased `Iterable<A>` of a generic parameter): the context only gives the last
+            # one, so the first is ascribed or the class would convert to the last directly.
+            return f"({inner} : {disasm._haxe_annotation(code, expr.expr.get_type())})"
         if target_name in _ARRAY_WRAPPERS and source_name in _ARRAY_WRAPPERS:
             # ArrayObj/ArrayDyn are one Haxe `Array<T>`; the element type comes from the context,
             # and `(cast x : Array<Dynamic>)` would pin it to Dynamic.
@@ -4166,6 +4178,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                     arg_haxe_type_name,
                     mapargs.value_type(code, ("r", func_core.findex.value, start_arg + i)),
                 )
+                arg_haxe_type_name = ifacenames.refine(
+                    arg_haxe_type_name, code, ("r", func_core.findex.value, start_arg + i)
+                )
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
@@ -4221,9 +4236,13 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
-        return_type_str = mapargs.refine(
-            _return_annotation(code, func_core, ret_core_type),
-            mapargs.value_type(code, ("ret", func_core.findex.value)),
+        return_type_str = ifacenames.refine(
+            mapargs.refine(
+                _return_annotation(code, func_core, ret_core_type),
+                mapargs.value_type(code, ("ret", func_core.findex.value)),
+            ),
+            code,
+            ("ret", func_core.findex.value),
         )
         if class_ret is not None:
             return_type_str = class_ret
@@ -4273,12 +4292,26 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     for name in unused_static_aliases:
         local_types.pop(name, None)
     _tag_map_allocations(ir_func.block, code, func_core.findex.value, ir_func.all_locals)
+    interfaces: Dict[str, Set[Optional[str]]] = {}
+    defs_of_web: Dict[int, List[int]] = {}
+    for index, web in getattr(ir_func, "_web_of_def", {}).items():
+        defs_of_web.setdefault(web, []).append(index)
     for local in ir_func.all_locals:
         if local.name in local_types and local.reg_idx is not None:
-            local_types[local.name] = mapargs.refine(
-                local_types[local.name],
-                mapargs.value_type(code, ("r", func_core.findex.value, local.reg_idx)),
-            )
+            node = ("r", func_core.findex.value, local.reg_idx)
+            local_types[local.name] = mapargs.refine(local_types[local.name], mapargs.value_type(code, node))
+            regs = func_core.regs
+            if local.reg_idx >= len(regs) or regs[local.reg_idx].resolve(code) is not local.get_type():
+                interfaces.setdefault(local.name, set()).add(None)
+                continue
+            defs = defs_of_web.get(local.web, []) if local.web is not None else None
+            interface = ifacenames.local(code, func_core.findex.value, local.reg_idx, defs)
+            interfaces.setdefault(local.name, set()).add(interface.name if interface is not None else None)
+    for name, found in interfaces.items():
+        # A name several registers share is declared once: only as what they all are.
+        only = next(iter(found))
+        if len(found) == 1 and only is not None:
+            local_types[name] = disasm.type_to_haxe(only)
     receiver_types = _virtual_receiver_static_types(ir_func, code)
     for name, haxe_type in receiver_types.items():
         if name in local_types:
@@ -7007,6 +7040,9 @@ def _class_body(
                     field_type_haxe,
                     mapargs.value_type(code, mapargs.field_node(code, ir_class.static, field_name)),
                 )
+                field_type_haxe = ifacenames.refine(
+                    field_type_haxe, code, mapargs.field_node(code, ir_class.static, field_name)
+                )
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
                 if field_name in elem_types:
@@ -7034,6 +7070,9 @@ def _class_body(
                 field_type_haxe = mapargs.refine(
                     field_type_haxe,
                     mapargs.value_type(code, mapargs.field_node(code, ir_class.dynamic, field_name)),
+                )
+                field_type_haxe = ifacenames.refine(
+                    field_type_haxe, code, mapargs.field_node(code, ir_class.dynamic, field_name)
                 )
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
