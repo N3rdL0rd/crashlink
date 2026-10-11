@@ -1556,6 +1556,32 @@ class IRFunction:
                 return True
         return False
 
+    def _receiver_check(
+        self, op: Opcode, op_idx: Optional[int], null_checked: Dict[int, int]
+    ) -> Optional[Tuple[int, int]]:
+        """`(check, call)` when `op` calls through a receiver checked earlier in its block.
+
+        HL evaluates and null-checks an instance method's object, a virtual's
+        object and a closure value before the call's arguments (genhl's
+        `eval_null_check` on the receiver of `AInstanceFun`/`AVirtualMethod`/
+        closure calls). A static function's first argument is no receiver,
+        whatever checked it.
+        """
+        if op_idx is None:
+            return None
+        receiver: Optional[int] = None
+        if op.op == "CallMethod" and op.df["args"].value:
+            receiver = op.df["args"].value[0].value
+        elif op.op == "CallClosure":
+            receiver = op.df["fun"].value
+        elif op.op in simple_calls and op.op != "Call0":
+            callee = op.df["fun"].resolve(self.code)
+            if isinstance(callee, Function) and not disasm.is_static(self.code, callee):
+                receiver = op.df["args"].value[0].value if op.op == "CallN" else op.df["arg0"].value
+        if receiver is None or receiver not in null_checked:
+            return None
+        return null_checked[receiver], op_idx
+
     def _resolve_method_field(
         self, obj_local: "IRLocal", obj_type: Type, field_idx: int
     ) -> Optional["IRField"]:
@@ -1588,6 +1614,8 @@ class IRFunction:
 
     def _lift_ops_into_block(self, block: IRBlock, ops: List[Opcode]) -> None:
         _debuginfo = self.func.debuginfo.value if (self.func.has_debug and self.func.debuginfo) else None
+        # Register -> index of the NullCheck that last checked it in this block.
+        null_checked: Dict[int, int] = {}
         for op in ops:
             op_idx = self._op_id_to_idx.get(id(op))
             # Capture the register-to-local mapping before any debug-name split.
@@ -1606,6 +1634,10 @@ class IRFunction:
 
             if op.op == "Nop":
                 continue
+
+            receiver_check = self._receiver_check(op, op_idx, null_checked)
+            if "dst" in op.df:
+                null_checked.pop(op.df["dst"].value, None)
 
             if op.op in arithmetic:
                 dst = self.locals[op.df["dst"].value]
@@ -1642,6 +1674,7 @@ class IRFunction:
                     else [source_locals[arg.value] for arg in op.df["args"].value]
                 )
                 call_expr = IRCall(self.code, IRCall.CallType.FUNC, fun, args)
+                call_expr.receiver_checked = receiver_check
 
                 if dst.get_type().kind.value == Type.Kind.VOID.value:
                     block.statements.append(call_expr)
@@ -1652,6 +1685,7 @@ class IRFunction:
                 fun = source_locals[op.df["fun"].value]
                 args = [source_locals[arg.value] for arg in op.df["args"].value]
                 call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun, args)
+                call_expr.receiver_checked = receiver_check
 
                 if dst.get_type().kind.value == Type.Kind.VOID.value:
                     block.statements.append(call_expr)
@@ -1676,6 +1710,7 @@ class IRFunction:
                 field_expr = self._resolve_method_field(obj_local, obj_type, op.df["field"].value)
                 if field_expr is not None:
                     call_expr = IRCall(self.code, IRCall.CallType.METHOD, field_expr, method_args)
+                    call_expr.receiver_checked = receiver_check
                     if dst.get_type().kind.value == Type.Kind.VOID.value:
                         block.statements.append(call_expr)
                     else:
@@ -2021,6 +2056,8 @@ class IRFunction:
                 else:
                     block.statements.append(IRAssign(self.code, dst_local, IRUnliftedOpcode(self.code, op)))
             elif op.op == "NullCheck":
+                if op_idx is not None:
+                    null_checked[op.df["reg"].value] = op_idx
                 continue
             elif op.op == "EnumIndex":
                 dst_local = self.locals[op.df["dst"].value]

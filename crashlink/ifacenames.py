@@ -271,6 +271,19 @@ def _cache_slots(code: Bytecode, owner: Obj) -> Dict[int, typeinit.Interface]:
     return found
 
 
+def conversion(code: Bytecode, obj: Obj, virtual: Virtual) -> Optional[typeinit.Interface]:
+    """The interface a conversion of an `obj` instance to `virtual` caches its wrapper as.
+
+    The compiler converts a class to a type one of its interfaces has through that
+    interface's cache slot, and to anything else bare: source has to say the interface for
+    the conversion to be cached again."""
+    for ancestor in reversed(_chain(code, obj)):
+        for interface in _cache_slots(code, ancestor).values():
+            if interface.virtual is virtual:
+                return interface
+    return None
+
+
 def _compute(code: Bytecode) -> _Result:
     if not typeinit.registry(code).interfaces:
         return _Result({}, {}, {})

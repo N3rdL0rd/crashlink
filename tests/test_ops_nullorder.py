@@ -84,3 +84,51 @@ class Main {
     assert expected == actual
     assert "append(arr[i].foo);" in files["src/Main.hx"]
     assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_argument_built_after_the_receiver_check_is_passed_inline(tmp_path: Path) -> None:
+    # `hs.remove(new Item())` checks `hs` before allocating the argument; hoisting the
+    # allocation into a temp ahead of the call allocates before the check.
+    source = """
+interface Coll<T> { function remove(v:T):Bool; }
+class Item { public function new() {} }
+class HS<T> implements Coll<T> {
+    public function new() {}
+    public function remove(v:T):Bool return true;
+}
+class Main {
+    static function main() {
+        var hs:Coll<Item> = new HS();
+        if (Std.random(1) == 1) hs = null;
+        Sys.println(hs.remove(new Item()));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert expected == actual
+    assert "hs.remove(new Item())" in files["src/Main.hx"]
+    assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_class_viewed_as_its_interface_to_call_a_method_is_converted_to_the_interface(tmp_path: Path) -> None:
+    # The map field is converted to `IMap` through the class's interface cache; once the
+    # conversion is a receiver rather than a temp, it still has to name the interface.
+    source = """
+class C { public static var TYPE = "type"; public function new() {} }
+class Main {
+    var comps:Map<String, C>;
+    function new() {
+        comps = new Map();
+        comps.set(C.TYPE, new C());
+    }
+    @:generic function has<T:C>(cls:Class<T>):Bool {
+        return comps.exists(Reflect.field(cls, "TYPE"));
+    }
+    static function main() {
+        Sys.println(new Main().has(C));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert expected == actual
+    assert _same_signature(original, recompiled, "Main.has_C")

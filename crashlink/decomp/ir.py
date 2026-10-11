@@ -529,6 +529,12 @@ class IRCall(IRExpression):
         self.call_type = call_type
         self.target = target
         self.args = args
+        # `(check, call)` opcode indices when the receiver (a method's object, a
+        # closure's function value) was null-checked at `check` on its way into
+        # the call at `call`: HL evaluates and checks the receiver before any
+        # argument, so whatever ran strictly between the two ran after it, and
+        # moving it into an argument keeps that order.
+        self.receiver_checked: Optional[Tuple[int, int]] = None
         if self.call_type == IRCall.CallType.THIS and self.target is not None:
             raise DecompError("THIS calls must have a None target")
         if self.call_type != IRCall.CallType.CLOSURE and isinstance(self.target, IRLocal):

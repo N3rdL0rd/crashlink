@@ -8,7 +8,7 @@ import copy
 import itertools
 
 import re
-from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union, cast
+from typing import TYPE_CHECKING, Dict, FrozenSet, Iterable, Iterator, List, Optional, Set, Tuple, Union, cast
 
 if TYPE_CHECKING:
     from ..function import IRFunction
@@ -1782,7 +1782,9 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 n += self._count_expr_occurrences(child, local)
         return n
 
-    def _first_evaluated_occurrence(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+    def _first_evaluated_occurrence(
+        self, expr: Optional[IRExpression], local: IRLocal, moved_ops: FrozenSet[int] = frozenset()
+    ) -> bool:
         """True if `local` sits at the position `expr`'s evaluation order
         reaches first: nothing structurally evaluated before it (a call's
         receiver before its args, a field/array access's target/array before
@@ -1796,6 +1798,10 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         the same guarantees `_call_move_ok` establishes for arithmetic,
         generalized to call/field receiver chains (`a().b.c()`) and
         non-assignment read positions alike.
+
+        A call's receiver is passed over when the original evaluated and
+        null-checked it before every opcode in `moved_ops` (the moved
+        definition's): the recompiled call evaluates and checks it first too.
         """
         if expr is None:
             return False
@@ -1803,21 +1809,46 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return True
         if isinstance(expr, (IRRef, IRRefNew)):
             return False
+        checked = self._receiver_checked_before(expr, moved_ops)
         for child in expr.get_children():
             if not isinstance(child, IRExpression):
                 continue
             if self._expr_contains_local(child, local):
-                return self._first_evaluated_occurrence(child, local)
+                return self._first_evaluated_occurrence(child, local, moved_ops)
+            if child is checked:
+                continue
             if _has_observable_effects(child) or self._reads_address_taken(child):
                 return False
         return False
 
-    def _movable_single_occurrence(self, expr: Optional[IRExpression], local: IRLocal) -> bool:
+    @staticmethod
+    def _receiver_checked_before(expr: IRExpression, moved_ops: FrozenSet[int]) -> Optional[IRExpression]:
+        """The receiver of call `expr` if its null check preceded every opcode in `moved_ops`.
+
+        `IRCall.receiver_checked` brackets the opcodes that ran after the check
+        and before the call in the same block.
+        """
+        if not (isinstance(expr, IRCall) and expr.receiver_checked is not None and moved_ops):
+            return None
+        check, call = expr.receiver_checked
+        if not all(check < op < call for op in moved_ops):
+            return None
+        if expr.call_type == IRCall.CallType.FUNC:
+            return expr.args[0] if expr.args else None
+        if expr.call_type in (IRCall.CallType.METHOD, IRCall.CallType.CLOSURE):
+            return expr.target
+        return None
+
+    def _movable_single_occurrence(
+        self, expr: Optional[IRExpression], local: IRLocal, moved_ops: FrozenSet[int] = frozenset()
+    ) -> bool:
         if expr is None or self._count_expr_occurrences(expr, local) != 1:
             return False
-        return self._first_evaluated_occurrence(expr, local)
+        return self._first_evaluated_occurrence(expr, local, moved_ops)
 
-    def _movable_read_position_ok(self, stmt: IRStatement, temp: IRLocal) -> bool:
+    def _movable_read_position_ok(
+        self, stmt: IRStatement, temp: IRLocal, moved_ops: FrozenSet[int] = frozenset()
+    ) -> bool:
         """Broader sibling of `_call_move_ok` for read positions it doesn't
         cover: a chained receiver/field access (`temp.method()`, `temp.field`)
         feeding the very next assignment's RHS, or `temp` sitting in a
@@ -1825,7 +1856,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         Field/array-store destinations stay with `_call_move_ok`, which
         already proves those safe independently of the call being moved; a
         read at the head of a field store's object, or in the value stored
-        into a local's or constant's field, is covered here.
+        into a local's or constant's field, is covered here. `moved_ops` are
+        the opcodes of `temp`'s definition (see `_first_evaluated_occurrence`).
         """
         if isinstance(stmt, IRAssign):
             if (
@@ -1834,7 +1866,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 and not self._expr_contains_local(stmt.expr, temp)
             ):
                 # `temp.a.b = v`: a store evaluates its object before its value.
-                if self._movable_single_occurrence(stmt.target.target, temp):
+                if self._movable_single_occurrence(stmt.target.target, temp, moved_ops):
                     return True
             if isinstance(stmt.target, IRField):
                 # `o.f = g(temp)`: an object held in a local or constant is
@@ -1846,19 +1878,21 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 ):
                     return False
                 return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(
-                    stmt.expr, temp
+                    stmt.expr, temp, moved_ops
                 )
             if not isinstance(stmt.target, IRLocal) or stmt.target == temp:
                 return False
-            return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(stmt.expr, temp)
+            return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(
+                stmt.expr, temp, moved_ops
+            )
         if isinstance(stmt, (IRConditional, IRWhileLoop)):
-            return self._movable_single_occurrence(stmt.condition, temp)
+            return self._movable_single_occurrence(stmt.condition, temp, moved_ops)
         if isinstance(stmt, IRSwitch):
-            return self._movable_single_occurrence(stmt.value, temp)
+            return self._movable_single_occurrence(stmt.value, temp, moved_ops)
         if isinstance(stmt, (IRReturn, IRThrow)):
-            return self._movable_single_occurrence(stmt.value, temp)
+            return self._movable_single_occurrence(stmt.value, temp, moved_ops)
         if isinstance(stmt, IRExpression):
-            return self._movable_single_occurrence(stmt, temp)
+            return self._movable_single_occurrence(stmt, temp, moved_ops)
         return False
 
     def _provably_loop_fresh(self, block: IRBlock, def_index: int, temp: IRLocal) -> bool:
@@ -2235,7 +2269,9 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                 self._call_move_ok(statements[i + 1], temp_local)
                                 or (
                                     self.move_into_reads
-                                    and self._movable_read_position_ok(statements[i + 1], temp_local)
+                                    and self._movable_read_position_ok(
+                                        statements[i + 1], temp_local, frozenset(current_stmt.src_op_idxs)
+                                    )
                                 )
                             )
                         ):
