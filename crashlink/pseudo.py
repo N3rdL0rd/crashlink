@@ -2088,6 +2088,11 @@ def _expression_to_haxe(
                 and target_basic.kind.value in numeric
                 and source_basic.kind.value in numeric
             ):
+                if isinstance(target_def, Null) and isinstance(source_def, Null):
+                    # A single SafeCast: the boxed value was held in a Dynamic variable the
+                    # compiler aliased to it. Converting it directly (also through `(v : Dynamic)`)
+                    # unboxes, converts and reboxes it; only a variable keeps it typed Dynamic.
+                    return f"{{ var dyn: Dynamic = {inner}; dyn; }}"
                 return f"({inner} : Dynamic)"
         if (
             isinstance(target_def, Virtual)

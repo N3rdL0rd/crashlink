@@ -159,3 +159,22 @@ class Main {
     assert actual == expected
     assert _same_signature(original, recompiled, "Main.run")
 
+
+def test_boxed_number_converted_to_another_boxed_number_through_dynamic(tmp_path: Path) -> None:
+    # `x` aliases `v`, so the conversion is one SafeCast; a direct one unboxes and reboxes.
+    source = """
+class Main {
+    static function widen(v:Null<Int>):Null<Float> {
+        var x:Dynamic = v;
+        return x;
+    }
+
+    static function main() {
+        Sys.println(widen(3));
+        Sys.println(widen(null));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _same_signature(original, recompiled, "Main.widen")
