@@ -320,12 +320,17 @@ def _compute(code: Bytecode) -> _Result:
         if not is_static_name(obj.name.resolve(code)):
             open_functions.update(binding.findex.value for binding in obj.bindings)
     nargs: Dict[int, int] = {}
+    # An abstract's value is declared as the abstract: the `this` of its members and what its
+    # constructor returns.
+    abstract_values: List[Node] = []
     for func in code.functions:
         signature = func.type.resolve(code).definition
         nargs[func.findex.value] = len(getattr(signature, "args", []))
-        # An abstract's members are declared in terms of the abstract, not its parts.
-        if abstracts.abstract_of_function(code, func) is not None:
-            open_functions.add(func.findex.value)
+        abstract = abstracts.abstract_of_function(code, func)
+        if abstract is not None and func.findex.value == abstract.constructor:
+            abstract_values.append(("ret", func.findex.value))
+        elif abstract is not None and func.findex.value in abstract.instance:
+            abstract_values.append(("r", func.findex.value, 0))
         for op in func.ops:
             if op.op in ("StaticClosure", "InstanceClosure"):
                 open_functions.add(op.df["fun"].value)
@@ -340,6 +345,9 @@ def _compute(code: Bytecode) -> _Result:
 
     def add(node: Node, source: _Source) -> None:
         sources.setdefault(node, []).append(source)
+
+    for node in abstract_values:
+        add(node, None)
 
     webs: Dict[int, _Webs] = {}
     for func in code.functions:

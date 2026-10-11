@@ -112,3 +112,27 @@ class Main {
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
     assert actual == expected
     assert _same_signature(original, recompiled, "$Main.main")
+
+
+def test_static_function_of_an_abstract_takes_the_interface_its_callers_convert_to(tmp_path: Path) -> None:
+    # An abstract's static function declares its parameters like any other; only `this` of its
+    # members and its constructor's result are the abstract's own.
+    source = """
+interface I {}
+class C implements I { public function new() {} }
+
+abstract Wrap(Int) {
+    public static function take(i:I):Bool {
+        return i != null;
+    }
+}
+
+class Main {
+    static function main() {
+        Sys.println(Wrap.take(new C()));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _same_signature(original, recompiled, "$Main.main")
