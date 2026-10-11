@@ -132,3 +132,25 @@ class Main {
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
     assert expected == actual
     assert _same_signature(original, recompiled, "Main.has_C")
+
+
+def test_function_field_read_out_of_a_structure_is_a_read_only_var(tmp_path: Path) -> None:
+    # A structure's method is called with `CallMethod`; a function-typed var's closure is read
+    # out of its slot and called. A class's method still satisfies a read-only var.
+    source = """
+class A {
+    var a:String;
+    public function new(a) this.a = a;
+    public function test() return a;
+}
+class Main {
+    static function main() {
+        var x:{ var test(default, never):() -> String; } = new A("foo");
+        Sys.println(x.test());
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert expected == actual
+    assert "var test(default, never)" in files["src/Main.hx"]
+    assert _same_signature(original, recompiled, "Main.main")
