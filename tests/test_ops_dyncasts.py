@@ -64,9 +64,9 @@ def _same_signature(original: Bytecode, recompiled: Bytecode, name: str) -> bool
 
 def test_checked_cast_out_of_dynamic_into_a_dynamic_slot_is_spelled_out(tmp_path: Path) -> None:
     # A value read out of Dynamic at a type (a property of a generic base class, a field of
-    # `Dynamic<Array<Dynamic>>`, a generic field holding a function) is SafeCast to it
-    # even where it is passed on as Dynamic: an erased or `Dynamic` parameter, a null test, a
-    # comparison, a `throw`.
+    # `Dynamic<Array<Dynamic>>`, a generic field holding a function, an iterable's `iterator`) is
+    # SafeCast to it even where it is passed on as Dynamic: an erased or `Dynamic` parameter, a
+    # null test, a comparison, a `throw`, a call of the function it holds.
     source = """
 import haxe.ds.Option;
 
@@ -89,6 +89,13 @@ class Holder<T> {
     public function new() {}
 }
 
+private abstract Items<T>(Iterator<T>) from Iterator<T> to Iterator<T> {
+    @:from public static inline function fromIterable<T>(i:Iterable<T>) return (i.iterator() : Items<T>);
+    public inline function hasNext() return this.hasNext();
+    public inline function next() return this.next();
+}
+
+@:forward @:transitive private abstract Refs(Array<String>) from Array<String> to Array<String> {}
 
 class Main {
     static function eq<T>(a:T, b:T, ?pos:haxe.PosInfos) Sys.println(Std.string(a) + " " + Std.string(b));
@@ -109,6 +116,9 @@ class Main {
         var x:Float = deNull(null, 0.5);
         Sys.println(x);
         try throw (getNull() : String) catch (e:String) Sys.println("caught") catch (e:Dynamic) Sys.println("other");
+        var refs:Refs = ["1"];
+        var items:Items<String> = refs;
+        Sys.println(items.hasNext() + " " + items.next());
     }
 
     static function main() run(function(v) {});
@@ -178,3 +188,21 @@ class Main {
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
     assert actual == expected
     assert _same_signature(original, recompiled, "Main.widen")
+
+
+def test_closure_called_through_dynamic_returns_dynamic(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function eq<T>(a:T, b:T) Sys.println(Std.string(a) + " " + Std.string(b));
+
+    static function run() {
+        var f:haxe.Constraints.Function = function() return 12;
+        eq(12, f());
+    }
+
+    static function main() run();
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _same_signature(original, recompiled, "Main.run")

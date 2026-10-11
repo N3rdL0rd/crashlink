@@ -529,6 +529,9 @@ class IRCall(IRExpression):
         self.call_type = call_type
         self.target = target
         self.args = args
+        # A closure called through a Dynamic value (a `haxe.Constraints.Function`): HL returns
+        # Dynamic whatever the function's own type, which the callee may have lost by inlining.
+        self.dynamic_callee = False
         if self.call_type == IRCall.CallType.THIS and self.target is not None:
             raise DecompError("THIS calls must have a None target")
         if self.call_type != IRCall.CallType.CLOSURE and isinstance(self.target, IRLocal):
@@ -538,6 +541,8 @@ class IRCall(IRExpression):
         """The type of the value the call returns."""
         if self.call_type == IRCall.CallType.THIS or self.target is None:
             return _get_type_in_code(self.code, "Obj")
+        if self.dynamic_callee:
+            return _get_type_in_code(self.code, "Dyn")
         callee = self.target.get_type().definition
         if isinstance(callee, Fun):
             return callee.ret.resolve(self.code)

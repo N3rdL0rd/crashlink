@@ -1652,6 +1652,9 @@ class IRFunction:
                 fun = source_locals[op.df["fun"].value]
                 args = [source_locals[arg.value] for arg in op.df["args"].value]
                 call_expr = IRCall(self.code, IRCall.CallType.CLOSURE, fun, args)
+                call_expr.dynamic_callee = (
+                    self.func.regs[op.df["fun"].value].resolve(self.code).kind.value == Type.Kind.DYN.value
+                )
 
                 if dst.get_type().kind.value == Type.Kind.VOID.value:
                     block.statements.append(call_expr)

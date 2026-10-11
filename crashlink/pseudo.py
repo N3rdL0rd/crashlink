@@ -1837,6 +1837,12 @@ def _expression_to_haxe(
                 params = ", ".join(disasm._haxe_annotation(code, arg.get_type()) for arg in expr.args)
                 ret = disasm._haxe_annotation(code, expr.get_type())
                 callee_str = f"(null : ({params}) -> {ret})"
+            elif expr.dynamic_callee and expr.target.get_type().kind.value != Type.Kind.DYN.value:
+                # Called through Dynamic, the call returns Dynamic, not the function's own type.
+                callee_str = f"({callee_str} : Dynamic)"
+            elif expr.call_type == IRCall.CallType.CLOSURE:
+                # A function read out of Dynamic at its type (`iterable.iterator`), then called.
+                callee_str = _spell_dynamic_cast(expr.target, callee_str, code)
             # Std functions used as direct call targets can usually be rendered
             # with their Haxe-qualified name (e.g. Std.random, Math.random)
             # instead of a synthetic extern stub.
