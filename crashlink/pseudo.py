@@ -512,6 +512,9 @@ def _null_operand(expr: Optional[IRExpression], code: Bytecode, ir_function: Opt
     """The operand of a null test; a lambda (`(x) -> x`) takes the `== null` into its body
     unless grouped."""
     rendered = _expression_to_haxe(expr, code, ir_function)
+    if expr is not None:
+        # A Dynamic value tested as the type it was read at (`Dynamic<Array<Dynamic>>`'s field).
+        rendered = _spell_dynamic_cast(expr, rendered, code)
     return f"({rendered})" if _is_lambda_text(rendered) else rendered
 
 
@@ -754,6 +757,63 @@ def _widens_typed_array(expr: IRExpression, code: Bytecode) -> bool:
     )
 
 
+def _strip_casts(expr: IRExpression) -> IRExpression:
+    while isinstance(expr, IRCast):
+        expr = expr.expr
+    return expr
+
+
+_NULLABLE_BASIC_KINDS = frozenset(
+    kind.value
+    for kind in (
+        Type.Kind.I32,
+        Type.Kind.F64,
+        Type.Kind.F32,
+        Type.Kind.BOOL,
+        Type.Kind.U8,
+        Type.Kind.U16,
+        Type.Kind.I64,
+    )
+)
+
+
+def _checked_dynamic_cast(expr: IRExpression, code: Bytecode) -> Optional[str]:
+    """The type a checked conversion out of Dynamic (a SafeCast from Dyn) is written to, when the
+    conversion has to be spelled out: a slot typed Dynamic (an erased or `Dynamic` parameter,
+    an operand) makes none of its own, so only `(cast v : T)` gives the value its source type
+    `T` (a `Dynamic<Array<Dynamic>>` field read, a property read at its applied type)."""
+    if not isinstance(expr, IRCast) or expr.untyped or expr.unsafe:
+        return None
+    if expr.expr.get_type().kind.value != Type.Kind.DYN.value:
+        return None
+    boxed = expr.expr
+    if isinstance(boxed, IRCast) and boxed.expr.get_type().kind.value in _NULLABLE_BASIC_KINDS:
+        # `cast (v : Dynamic)` converts `v` itself: the ascription types the value, it doesn't box it.
+        return None
+    target = expr.get_type()
+    definition = target.definition
+    if isinstance(definition, Null):
+        if definition.type.resolve(code).kind.value not in _NULLABLE_BASIC_KINDS:
+            return None
+    elif (
+        not isinstance(definition, (Obj, Enum, Fun)) or disasm.type_name(code, target) == "hl.types.ArrayObj"
+    ):
+        # An `ArrayObj` is the `Array<T>` of some class T the cast does not name.
+        return None
+    annotation = disasm._haxe_annotation(code, target)
+    return None if annotation == "Dynamic" else annotation
+
+
+def _spell_dynamic_cast(expr: IRExpression, text: str, code: Bytecode) -> str:
+    """`text` (the rendering of `expr`) as `(cast v : T)` if `expr` is a checked conversion out of
+    Dynamic not already written as a cast."""
+    annotation = _checked_dynamic_cast(expr, code)
+    if annotation is None or text.startswith(("cast", "(cast")):
+        return text
+    operand = text if re.fullmatch(r"[\w.]+(\(.*\))?", text) else f"({text})"
+    return f"(cast {operand} : {annotation})"
+
+
 def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], skip: int = 0) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
@@ -778,9 +838,29 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], 
     if expr.target is None:
         return _with_comment(rendered, pos_comment)
     signature = expr.target.get_type().definition
-    if not isinstance(signature, Fun) or len(signature.args) < len(call_args):
+    if not isinstance(signature, Fun):
         return _with_comment(rendered, pos_comment)
-    params = [arg.resolve(code).definition for arg in signature.args[len(signature.args) - len(call_args) :]]
+    # Parameters line up with the arguments from the end of the full argument list, before an
+    # elided position is dropped from it.
+    offset = len(signature.args) - len(expr.args) + skip
+    if offset < 0:
+        return _with_comment(rendered, pos_comment)
+    params = [arg.resolve(code).definition for arg in signature.args[offset : offset + len(call_args)]]
+    for i, arg in enumerate(call_args):
+        if not isinstance(params[i], Dyn):
+            continue
+        annotation = _checked_dynamic_cast(arg, code)
+        if annotation is None:
+            continue
+        target = arg.get_type().definition
+        if "<" in annotation and any(
+            j != i and _strip_casts(other).get_type().definition is target
+            for j, other in enumerate(call_args)
+        ):
+            # Another argument may fix a type parameter at the same type with other type
+            # arguments than the erased `<Dynamic>` the cast would name.
+            continue
+        rendered[i] = _spell_dynamic_cast(arg, rendered[i], code)
     for i, arg in enumerate(call_args):
         if not isinstance(arg.get_type().definition, Ref):
             continue
@@ -1307,8 +1387,12 @@ def _expression_to_haxe(
             else:
                 # Comparison operands of an equality/relational op need parens:
                 # `a < b == c < d` would otherwise parse as `((a<b)==c)<d`.
-                left = _paren_comparison_operand(left_expr, code, ir_function)
-                right = _paren_comparison_operand(right_expr, code, ir_function)
+                left = _spell_dynamic_cast(
+                    left_expr, _paren_comparison_operand(left_expr, code, ir_function), code
+                )
+                right = _spell_dynamic_cast(
+                    right_expr, _paren_comparison_operand(right_expr, code, ir_function), code
+                )
                 left, right = _type_i64_literals(left_expr, right_expr, left, right)
             if (
                 actual_op in (IRBoolExpr.CompareType.EQ, IRBoolExpr.CompareType.NEQ)
@@ -1928,6 +2012,22 @@ def _expression_to_haxe(
                 target_str = _expression_to_haxe(field.target, code, ir_function)
             return f"(({target_str} : Dynamic<{disasm._haxe_annotation(code, expr.get_type())}>).{field.field_name})"
         inner = _expression_to_haxe(expr.expr, code, ir_function)
+        boxed = expr.expr
+        if (
+            not expr.unsafe
+            and expr.get_type().kind.value != Type.Kind.DYN.value
+            and isinstance(boxed, IRCast)
+            and not boxed.untyped
+            and boxed.get_type().kind.value == Type.Kind.DYN.value
+            and boxed.expr.get_type().kind.value in _NULLABLE_BASIC_KINDS
+        ):
+            # A value converted out of Dynamic right after being boxed into it: the compiler folded
+            # a Dynamic local or field into its value but kept it typed Dynamic.
+            inner = f"({_expression_to_haxe(boxed.expr, code, ir_function)} : Dynamic)"
+        elif expr.get_type().kind.value in _NULLABLE_BASIC_KINDS:
+            # A `Null<T>` read out of Dynamic (a `Null<T>` field or return of a type parameter),
+            # then unboxed: the read is a conversion of its own, which a `T` context would skip.
+            inner = _spell_dynamic_cast(boxed, inner, code)
         if target_name == "I32" and source_name in {"F32", "F64"}:
             return f"Std.int({inner})"
         if target_name in ("F32", "F64") and source_name == "I32" and isinstance(expr.expr, IRConst):
@@ -2998,7 +3098,10 @@ def _generate_statements(
                 output_lines.append(f"{indent}return;")
 
         elif isinstance(stmt, IRThrow):
-            val_str = _expression_to_haxe(stmt.value, code, ir_function)
+            # `throw` takes Dynamic: a value thrown as the type it was read at keeps its cast.
+            val_str = _spell_dynamic_cast(
+                stmt.value, _expression_to_haxe(stmt.value, code, ir_function), code
+            )
             output_lines.append(f"{indent}throw {val_str};")
 
         elif isinstance(stmt, IRSwitch):
