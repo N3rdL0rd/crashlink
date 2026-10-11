@@ -1912,25 +1912,35 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         is the last one in `block` (so nothing later in the same iteration
         reads it either, beyond the substitution already being performed
         there).
-
-        Otherwise the use may be followed by more statements, as long as no
-        read of `temp` survives anywhere: none in the rest of `block` before a
-        kill, and none in the whole function apart from those this define's
-        own kill already shadows (`_ScopedLocalLifetime.reads` stops scanning
-        `block` at the define, so a read it finds sits before it in `block`,
-        in another branch, in a loop condition or after the loop - every
-        place a stale cross-iteration value could reach).
         """
         statements = block.statements
         lifetime = _ScopedLocalLifetime(self.func.block)
         if def_index + 2 == len(statements):
             return not any(lifetime.reads(stmt, temp) for stmt in statements[:def_index])
+        # The use may also be followed by more statements, as long as no read of `temp` survives
+        # anywhere (none in the rest of the block, none elsewhere in the function). A copy of another
+        # local (`t = i; i++; use(t)`) is left alone: inlining it turns the use into `i - 1`, which
+        # later loop recovery (a counted `for`) does not expect.
+        define = statements[def_index]
+        if not isinstance(define, IRAssign):
+            return False
+        if isinstance(define.expr, IRLocal):
+            return False
+        # A value computed from a local this block also writes (a loop counter and its increment) is
+        # a snapshot: moving it past the write needs the compensation that counted-loop recovery
+        # does not expect.
+        read_names = self._collect_free_locals(define.expr)
+        for stmt in statements:
+            if (
+                isinstance(stmt, IRAssign)
+                and isinstance(stmt.target, IRLocal)
+                and stmt.target.name in read_names
+            ):
+                return False
         if not lifetime.dead_in(statements[def_index + 2 :], temp):
             return False
-        # Proving no other read survives scans the whole function, once per temp: only worth it
-        # (and only affordable) when the function is of ordinary size.
         if self._function_size() > _WHOLE_FUNCTION_SCAN_LIMIT:
-            return False
+            return False  # the whole-function scan below runs once per temp: too costly for huge functions
         return not lifetime.reads(self.func.block, temp)
 
     def _function_size(self) -> int:
