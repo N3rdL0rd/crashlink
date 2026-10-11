@@ -2067,6 +2067,8 @@ class Bytecode(Serialisable):
         # Element type of the erased arrays a structure field, enum parameter, function type argument or
         # closure parameter holds; see disasm.erased_array_slots.
         self._erased_array_slots: Optional[Dict[Tuple[Any, ...], "Type"]] = None
+        # The type parameters of classes, recovered from casts of their erased slots; see classgenerics.
+        self._class_generics: Optional[Any] = None
         self._hxsl_shaders_cache: Optional[Any] = None
         # id(type definition) -> index in self.types; see type_index_of.
         self._type_index_by_def: Optional[Dict[int, int]] = None
@@ -2118,6 +2120,7 @@ class Bytecode(Serialisable):
         self._global_return_elem_types = {}
         self._global_param_elem_types = {}
         self._erased_array_slots = None
+        self._class_generics = None
 
     def invalidate_proto_field_cache(self) -> None:
         """

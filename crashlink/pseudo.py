@@ -33,6 +33,7 @@ from .core import (
 )
 from . import disasm
 from . import abstracts, generics, mapargs, rtti_meta, hxbit, hxsl, typeinit
+from .classgenerics import ScopeEntry, class_generics, method_root
 from .std_types import STD_TYPES
 from .decomp import (
     STATIC_INIT_UNRECOVERABLE,
@@ -1883,7 +1884,7 @@ def _expression_to_haxe(
             return "[]"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
-            rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}({args_str})"
+            rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}{disasm.generic_arguments(code, expr.get_type())}({args_str})"
             owner = expr.get_type().definition
             # A private constructor of a std class (an inlined `JsonParser.parse`).
             return (
@@ -2030,7 +2031,7 @@ def _expression_to_haxe(
             # class it needs `cast`, which compiles to the same SafeCast.
             # `cast (v : T).m()` reads as the typed cast `cast (v : T)`, so group the operand.
             operand = f"({inner})" if inner.startswith("(") else inner
-            return f"(cast {operand} : {disasm.type_to_haxe(target_name)})"
+            return f"(cast {operand} : {disasm.type_to_haxe(target_name)}{disasm.generic_arguments(code, expr.get_type())})"
         return inner
 
     elif isinstance(expr, IRPrimitiveJump):  # Should be gone, but as a fallback
@@ -4114,6 +4115,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     return_type_str = "Void"
     variables: Dict[int, int] = {}
     returned_variable: Optional[int] = None
+    variable_offset = 0
 
     core_fun_type_def = func_core.type.resolve(code).definition
     if isinstance(core_fun_type_def, Fun):
@@ -4126,6 +4128,23 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         variables, returned_variable = _own_type_variables(
             code, func_core, containing, func_name_str, is_instance
         )
+        # Slots the method's first declaring class types with one of its type parameters.
+        class_obj = (
+            containing.dynamic if is_instance and not is_constructor and containing is not None else None
+        )
+        class_args = {
+            i: text
+            for i in range(len(core_fun_type_def.args) - start_arg)
+            if (text := _method_slot_text(code, class_obj, func_name_str, i)) is not None
+        }
+        class_ret = _method_slot_text(code, class_obj, func_name_str)
+        variables = {k: v for k, v in variables.items() if k - start_arg not in class_args}
+        if class_ret is not None:
+            returned_variable = None
+        # The method's own type parameters are named past its class's.
+        variable_offset = (
+            len(class_generics(code).params(containing.dynamic)) if containing is not None else 0
+        )
         for i, arg_type_idx in enumerate(core_fun_type_def.args[start_arg:]):
             arg_core_type = arg_type_idx.resolve(code)
             arg_haxe_type_name = (
@@ -4135,8 +4154,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 if i in erased
                 else disasm._haxe_annotation(code, arg_core_type)
             )
-            if start_arg + i in variables:
-                variable = _type_variable_name(variables[start_arg + i])
+            if i in class_args:
+                arg_haxe_type_name = class_args[i]
+            elif start_arg + i in variables:
+                variable = _type_variable_name(variables[start_arg + i] + variable_offset)
                 arg_haxe_type_name = (
                     variable if arg_core_type.kind.value == Type.Kind.DYN.value else f"Array<{variable}>"
                 )
@@ -4204,8 +4225,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             _return_annotation(code, func_core, ret_core_type),
             mapargs.value_type(code, ("ret", func_core.findex.value)),
         )
-        if returned_variable is not None:
-            return_type_str = _type_variable_name(returned_variable)
+        if class_ret is not None:
+            return_type_str = class_ret
+        elif returned_variable is not None:
+            return_type_str = _type_variable_name(returned_variable + variable_offset)
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor or abstract_constructor:
@@ -4214,7 +4237,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
     type_params = (
-        "<" + ", ".join(_type_variable_name(n) for n in sorted(set(variables.values()))) + ">"
+        "<"
+        + ", ".join(_type_variable_name(n + variable_offset) for n in sorted(set(variables.values())))
+        + ">"
         if isinstance(core_fun_type_def, Fun) and variables
         else ""
     )
@@ -6806,6 +6831,10 @@ def _class_body(
     indent_str = _indent_str(1)
 
     header = f"{_rtti_type_meta(code, primary_obj.name.resolve(code)) if primary_obj is not None else ''}{_struct_meta(primary_obj)}{private}class {declared}"
+    generic = class_generics(code)
+    params = generic.params(ir_class.dynamic)
+    if params:
+        header += f"<{', '.join(params)}>"
     abstract = abstracts.abstract_of(code, primary_obj)
     if abstract is not None:
         header = private + abstract.header(code, declared if module is not None else None)
@@ -6814,7 +6843,10 @@ def _class_body(
         super_type = ir_class.dynamic.super.resolve(code)
         if isinstance(super_type.definition, Obj):
             super_name = destaticify(super_type.definition.name.resolve(code))
+            super_args = generic.supers.get(id(ir_class.dynamic))
             header += f" extends {super_name}"
+            if super_args:
+                header += f"<{', '.join(_scope_text(code, arg) for arg in super_args)}>"
     # A class hxbit's `Serializable` macro rewrote is rendered as written:
     # without the members the macro generates again on recompile.
     serializable = hxbit.serializable_class(ir_class)
@@ -7008,6 +7040,9 @@ def _class_body(
                 if field_name in elem_types:
                     elem_haxe = disasm._haxe_annotation(code, elem_types[field_name])
                     field_type_haxe = f"Array<{elem_haxe}>"
+            slot = generic.slot_in(ir_class.dynamic, ("field", id(ir_class.dynamic), field_name))
+            if slot is not None:
+                field_type_haxe = _scope_text(code, slot[0])
             meta = "@:s " if serializable is not None and field_name in serializable.fields else ""
             meta += _rtti_member_meta(code, ir_class.dynamic, field_name, False)
             if isinstance(field_type.definition, Packed):
@@ -7362,6 +7397,28 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
             visit(child)
 
     visit(root)
+
+
+def _scope_text(code: Bytecode, entry: ScopeEntry) -> str:
+    """A class type parameter as written in a class body: its name, or the type a super class closed it with."""
+    if entry is None:
+        return "Dynamic"
+    if isinstance(entry, str):
+        return entry
+    return disasm._haxe_annotation(code, entry)
+
+
+def _method_slot_text(code: Bytecode, obj: Optional[Obj], name: str, *index: int) -> Optional[str]:
+    """How a method of `obj` declares its return (no `index`) or parameter `index` when the class
+    that first declares the method types it with a class type parameter (see `classgenerics`)."""
+    if obj is None:
+        return None
+    root = method_root(code, obj, name)
+    if root is None:
+        return None
+    key = ("arg", id(root), name, index[0]) if index else ("ret", id(root), name)
+    slot = class_generics(code).slot_in(obj, key)
+    return _scope_text(code, slot[0]) if slot is not None else None
 
 
 def _type_variable_name(number: int) -> str:

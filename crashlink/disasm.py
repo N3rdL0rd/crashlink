@@ -859,11 +859,26 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
             name = type_name(code, current)
             # A private std class an std abstract wraps (`haxe.Int64`): a declared type
             # can only be the abstract, which converts from it.
-            return STD_WRAPPED.get(name) or type_to_haxe(name)
+            rendered = STD_WRAPPED.get(name) or type_to_haxe(name)
+            return rendered if native else rendered + generic_arguments(code, current, render)
         finally:
             active.remove(key)
 
     return render(typ)
+
+
+def generic_arguments(code: Bytecode, typ: Type, render: Optional[Callable[[Type], str]] = None) -> str:
+    """The `<...>` a reference to a generic user class is written with (see `classgenerics`), else ''."""
+    definition = typ.definition
+    if not isinstance(definition, Obj):
+        return ""
+    from .classgenerics import class_generics
+
+    args = class_generics(code).args.get(id(definition))
+    if not args:
+        return ""
+    rendered = render or (lambda t: _haxe_annotation(code, t))
+    return "<" + ", ".join("Dynamic" if arg is None else rendered(arg) for arg in args) + ">"
 
 
 def func_header(code: Bytecode, func: Function | Native) -> str:
