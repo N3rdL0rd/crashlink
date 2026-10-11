@@ -463,7 +463,9 @@ def structure_property_kinds(code: Bytecode) -> Dict[str, set[str]]:
     return kinds
 
 
-_omitted_field_cache: Dict[int, Tuple[Any, Dict[int, set[str]], Dict[int, set[str]]]] = {}
+_omitted_field_cache: Dict[
+    int, Tuple[Any, Dict[int, set[str]], Dict[int, set[str]], Dict[int, set[str]]]
+] = {}
 
 
 def _omitted_literal_fields(code: Bytecode) -> Dict[int, set[str]]:
@@ -476,18 +478,26 @@ def _stored_function_fields(code: Bytecode) -> Dict[int, set[str]]:
     return _structure_facts(code)[1]
 
 
-def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set[str]]]:
-    """The fields each structure's literals leave out, and the function-typed ones code
-    stores into, both by `id` of its definition.
+def _read_function_fields(code: Bytecode) -> Dict[int, set[str]]:
+    """The function-typed fields code reads as values with `Field`, by `id` of the structure's
+    definition: HL calls a structure's method with `CallMethod` and reads it with `DynGet`,
+    and only reads a `var` (or `dynamic function`) field's closure out of its slot."""
+    return _structure_facts(code)[2]
+
+
+def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set[str]], Dict[int, set[str]]]:
+    """The fields each structure's literals leave out, the function-typed ones code stores
+    into, and the function-typed ones it reads out of their slot, all by `id` of its definition.
 
     A literal allocates the structure then stores its fields in turn, so a field that is
     never stored before the register is reused is one the literal omitted: the field is
     optional, which the compiled structure does not record."""
     cached = _omitted_field_cache.get(id(code))
     if cached is not None and cached[0]() is code:
-        return cached[1], cached[2]
+        return cached[1], cached[2], cached[3]
     omitted: Dict[int, set[str]] = {}
     stored_functions: Dict[int, set[str]] = {}
+    read_functions: Dict[int, set[str]] = {}
 
     def finish(typ: Virtual, stored: set[str]) -> None:
         for f in typ.fields:
@@ -516,6 +526,12 @@ def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set
                 if entry is not None and entry[0] is None:
                     entry[1].add(df["field"].resolve(code))
                 continue
+            if op.op == "Field":
+                source = func.regs[df["obj"].value].resolve(code).definition
+                if isinstance(source, Virtual) and df["field"].value < len(source.fields):
+                    member = source.fields[df["field"].value]
+                    if isinstance(member.type.resolve(code).definition, Fun):
+                        read_functions.setdefault(id(source), set()).add(member.name.resolve(code))
             if op.op == "Setref" or "dst" not in df:
                 continue
             reg = df["dst"].value
@@ -535,8 +551,8 @@ def _structure_facts(code: Bytecode) -> Tuple[Dict[int, set[str]], Dict[int, set
         for entry in live.values():
             if entry[0] is not None:
                 finish(entry[0], entry[1])
-    _omitted_field_cache[id(code)] = (weakref.ref(code), omitted, stored_functions)
-    return omitted, stored_functions
+    _omitted_field_cache[id(code)] = (weakref.ref(code), omitted, stored_functions, read_functions)
+    return omitted, stored_functions, read_functions
 
 
 def is_arrayobj_alloc(code: Bytecode, func: Function | Native) -> bool:
@@ -819,6 +835,7 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                 )
                 omitted = _omitted_literal_fields(code).get(key, set())
                 stored = _stored_function_fields(code).get(key, set())
+                read = _read_function_fields(code).get(key, set())
                 declared: set[str] = set()
                 dynamic = typeinit.dynamic_members(code, definition)
 
@@ -838,12 +855,19 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
                         members.append(f"var {name}(get, {setter}): {field_type(name, ftype)};")
                     elif name in omitted and ftype.kind.value not in _BASIC_KINDS:
                         members.append(f"@:optional var {name}: {field_type(name, ftype)};")
-                    elif isinstance(fdef, Fun) and name not in stored:
+                    elif (
+                        isinstance(fdef, Fun) and name not in stored and (name in dynamic or name not in read)
+                    ):
                         params = ", ".join(
                             f"a{i}: {render(a.resolve(code))}" for i, a in enumerate(fdef.args)
                         )
                         kw = "dynamic " if name in dynamic else ""
                         members.append(f"{kw}function {name}({params}): {render(fdef.ret.resolve(code))};")
+                    elif isinstance(fdef, Fun) and name not in stored:
+                        # Read out of its slot, never stored: a read-only var, which a
+                        # class's method still satisfies.
+                        optional = "@:optional " if has_optional else ""
+                        members.append(f"{optional}var {name}(default, never): {field_type(name, ftype)};")
                     else:
                         nullable = ftype.kind.value not in _BASIC_KINDS
                         optional = "@:optional " if has_optional and nullable else ""

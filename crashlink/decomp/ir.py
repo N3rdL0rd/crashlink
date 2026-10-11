@@ -532,6 +532,12 @@ class IRCall(IRExpression):
         # A closure called through a Dynamic value (a `haxe.Constraints.Function`): HL returns
         # Dynamic whatever the function's own type, which the callee may have lost by inlining.
         self.dynamic_callee = False
+        # `(check, call)` opcode indices when the receiver (a method's object, a
+        # closure's function value) was null-checked at `check` on its way into
+        # the call at `call`: HL evaluates and checks the receiver before any
+        # argument, so whatever ran strictly between the two ran after it, and
+        # moving it into an argument keeps that order.
+        self.receiver_checked: Optional[Tuple[int, int]] = None
         if self.call_type == IRCall.CallType.THIS and self.target is not None:
             raise DecompError("THIS calls must have a None target")
         if self.call_type != IRCall.CallType.CLOSURE and isinstance(self.target, IRLocal):

@@ -1445,7 +1445,19 @@ def _expression_to_haxe(
         type_name = disasm.type_name(code, target_type)
         if isinstance(expr.target, IRCast) and isinstance(target_type.definition, Virtual):
             # A class or Dynamic value viewed as an interface to read one of its fields: the value itself has no such field.
-            target_str = f"(cast {target_str} : {disasm._haxe_annotation(code, target_type)})"
+            # A class converted to one of its interfaces caches the conversion, which only naming the interface repeats.
+            source_def = expr.target.expr.get_type().definition
+            interface = (
+                ifacenames.conversion(code, source_def, target_type.definition)
+                if isinstance(source_def, Obj)
+                else None
+            )
+            annotation = (
+                disasm.type_to_haxe(interface.name)
+                if interface is not None
+                else disasm._haxe_annotation(code, target_type)
+            )
+            target_str = f"(cast {target_str} : {annotation})"
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
