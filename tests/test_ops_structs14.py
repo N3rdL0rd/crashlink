@@ -92,3 +92,23 @@ class Main {
     assert actual == expected
     assert "static function take(a: A)" in files["src/Main.hx"], files["src/Main.hx"]
     assert _same_signature(original, recompiled, "$Main.main")
+
+
+def test_class_converted_to_a_typed_structure_then_to_an_erased_one_keeps_both_conversions(
+    tmp_path: Path,
+) -> None:
+    # `Lambda.count(m)` converts the map to `Iterable<Int>`, then that to the `Iterable<A>` the
+    # generic parameter erases to `next(): Dynamic`. A declaration of the erased structure alone
+    # would convert the map to it directly, once.
+    source = """
+class Main {
+    static function main() {
+        var m = new Map<String, Int>();
+        m.set("foo", 12);
+        Sys.println(Lambda.count(m));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _same_signature(original, recompiled, "$Main.main")

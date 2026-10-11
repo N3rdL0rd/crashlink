@@ -2001,6 +2001,18 @@ def _expression_to_haxe(
                 for name, value in expr.expr.fields
             )
             return f"({inner} : {{ {members} }})"
+        if (
+            isinstance(target_def, Virtual)
+            and isinstance(source_def, Virtual)
+            and target_def is not source_def
+            and isinstance(expr.expr, IRCast)
+            and not expr.expr.untyped
+            and isinstance(expr.expr.expr.get_type().definition, Obj)
+        ):
+            # A class converted to one structure, then to another (`Iterable<Int>`, then the
+            # erased `Iterable<A>` of a generic parameter): the context only gives the last
+            # one, so the first is ascribed or the class would convert to the last directly.
+            return f"({inner} : {disasm._haxe_annotation(code, expr.expr.get_type())})"
         if target_name in _ARRAY_WRAPPERS and source_name in _ARRAY_WRAPPERS:
             # ArrayObj/ArrayDyn are one Haxe `Array<T>`; the element type comes from the context,
             # and `(cast x : Array<Dynamic>)` would pin it to Dynamic.
