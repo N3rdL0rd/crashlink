@@ -141,3 +141,21 @@ class Main {
     assert _same_signature(original, recompiled, "Main.run")
 
 
+def test_int_stored_into_nullable_int64_is_one_unchecked_cast(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static var n:Null<haxe.Int64>;
+
+    static function run(i:Int) {
+        n = 29;
+        var m:Null<haxe.Int64> = i;
+        Sys.println(n != null && m != null);
+    }
+
+    static function main() run(Std.random(1) + 3);
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert actual == expected
+    assert _same_signature(original, recompiled, "Main.run")
+

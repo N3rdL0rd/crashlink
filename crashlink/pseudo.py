@@ -2056,11 +2056,12 @@ def _expression_to_haxe(
         if (
             isinstance(target_inner, Null)
             and target_inner.type.resolve(code).kind.value == Type.Kind.I64.value
-            and isinstance(expr.expr, IRConst)
-            and expr.expr.const_type == IRConst.ConstType.INT
+            and expr.expr.get_type().kind.value == Type.Kind.I32.value
         ):
-            # An Int literal does not convert to a nullable 64-bit integer by itself.
-            return f"({inner} : hl.I64)"
+            # An Int reaches a nullable 64-bit integer only through `cast`, a single SafeCast;
+            # `(v : hl.I64)` would widen it first (ToInt), then box it.
+            operand = inner if re.fullmatch(r"[\w.]+", inner) else f"({inner})"
+            return f"(cast {operand} : Null<hl.I64>)"
         target_def, source_def = expr.get_type().definition, expr.expr.get_type().definition
         if (
             isinstance(target_def, Virtual)

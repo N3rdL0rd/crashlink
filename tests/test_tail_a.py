@@ -207,7 +207,7 @@ class Main {
 """
         },
     )
-    assert "(29 : hl.I64)" in files["src/Main.hx"]
+    assert "(cast 29 : Null<hl.I64>)" in files["src/Main.hx"]
 
 
 def test_dynamic_method_body_reads_its_receiver(tmp_path: Path) -> None:
