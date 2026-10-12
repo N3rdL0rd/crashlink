@@ -1218,6 +1218,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             expr.target, changed = self._substitute_in_expr(expr.target, target, replacement)
             made_change = made_change or changed
         elif isinstance(expr, IRCast):
+            if self._widened_dyn_read(expr, target, replacement):
+                return expr, False  # keep the Dynamic temp: the cast out of it is a checked one
             expr.expr, changed = self._substitute_in_expr(expr.expr, target, replacement)
             made_change = made_change or changed
         elif isinstance(expr, IRArrayAccess):
@@ -1286,6 +1288,16 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 return True
             pending.extend(child for child in node.get_children() if isinstance(child, IRExpression))
         return False
+
+    @staticmethod
+    def _widened_dyn_read(cast: IRCast, target: IRLocal, replacement: IRExpression) -> bool:
+        """A cast out of a Dynamic temp that was filled from a statically typed value (`var d:Any = "s";
+        (d : String)`). Substituting the value would leave a cast of a value that already has the
+        type, which source cannot express and which compiles to no cast at all."""
+        if cast.expr != target or target.get_type().kind.value != Type.Kind.DYN.value:
+            return False
+        value_kind = replacement.get_type().kind.value
+        return value_kind != Type.Kind.DYN.value and cast.get_type().kind.value == value_kind
 
     def _substitute_in_statement(
         self,

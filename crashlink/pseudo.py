@@ -3362,8 +3362,13 @@ def _generate_statements(
                 and re.fullmatch(r"var\d+", stmt.expr.name)
                 and not re.fullmatch(r"var\d+", stmt.target.name)
             )
+            widened_dyn = (
+                stmt.target.get_type().kind.value == Type.Kind.DYN.value
+                and stmt.expr.get_type().kind.value != Type.Kind.DYN.value
+            )  # `var d:Any = "s"`: the cast read back out of it is checked, so the temp has to stay
             if (
                 not registerable
+                and not widened_dyn
                 and re.fullmatch(r"var\d+", stmt.target.name)
                 and _is_single_use_render_expr(stmt.expr)
             ):
