@@ -1378,6 +1378,25 @@ class IRCast(IRExpression):
         return f"<IRCast: ({type_name}){self.expr}>"
 
 
+class IRClassCast(IRExpression):
+    """`cast(value, Class)` for a class or interface: the compiler spells the check out as a
+    `hl.BaseType.check` test and a `throw "Cast error"` (there is no opcode for it)."""
+
+    def __init__(self, code: Bytecode, value: IRExpression, class_ref: IRExpression):
+        super().__init__(code)
+        self.value = value
+        self.class_ref = class_ref
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Dyn")
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.value, self.class_ref]
+
+    def __repr__(self) -> str:
+        return f"<IRClassCast: cast({self.value}, {self.class_ref})>"
+
+
 class IRStringConvert(IRExpression):
     """Converts a value to its string representation at this evaluation point."""
 

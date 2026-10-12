@@ -51,3 +51,22 @@ class Main {
     left = next(f for f in original.functions if original.full_func_name(f) == name)
     right = next(f for f in recompiled.functions if recompiled.full_func_name(f) == name)
     assert signature(original, left).matches(signature(recompiled, right))
+
+
+def test_cast_to_an_interface_is_written_as_a_cast(tmp_path: Path) -> None:
+    source = """
+interface Shape { }
+class Main {
+    static function id(v:Dynamic):Dynamic return v;
+    static function eq(a:Dynamic, b:Dynamic) { Sys.println(a == b); }
+    static function main() {
+        eq(null, cast(id(null), Shape));
+    }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "Cast error" not in text
+    name = "$Main.main"
+    left = next(f for f in original.functions if original.full_func_name(f) == name)
+    right = next(f for f in recompiled.functions if recompiled.full_func_name(f) == name)
+    assert signature(original, left).matches(signature(recompiled, right))

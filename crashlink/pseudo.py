@@ -40,6 +40,7 @@ from .decomp import (
     IRBreak,
     IRContinue,
     IRCast,
+    IRClassCast,
     IRNativeStub,
     IRClass,
     IRField,
@@ -1559,6 +1560,9 @@ def _expression_to_haxe(
         if idx_str == "0" and arr_str in getattr(ir_function, "_unboxed_captures", ()):
             return arr_str  # the variable itself: its capture box is not part of the source
         return f"{arr_str}[{idx_str}]"
+
+    elif isinstance(expr, IRClassCast):
+        return f"cast({_expression_to_haxe(expr.value, code, ir_function)}, {_expression_to_haxe(expr.class_ref, code, ir_function)})"
 
     elif isinstance(expr, IRPostIncrement):
         target_text = _expression_to_haxe(expr.target, code, ir_function)
