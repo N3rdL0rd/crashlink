@@ -312,6 +312,8 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             new_cases[new_case_val] = body
             patterns[new_case_val] = pattern
 
+        for key, body in new_cases.items():
+            self._bind_expression_reads(body, enum_value, patterns[key])
         new_switch = IRSwitch(self.func.code, enum_value, new_cases, next_stmt.default, new_aliases)
         new_switch.adopt(stmt, next_stmt)
         new_switch.enum_patterns = patterns
@@ -391,6 +393,92 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
 
         visit(self.func.block)
         return incoming == 1
+
+    def _literal_patterns(
+        self, body: IRBlock, default: IRBlock, value: IRLocal, pattern: IREnumPattern
+    ) -> bool:
+        """`case Bar(0): return true; default: return false`: a case that only returns whether the
+        payloads equal constants, against a default that returns false, is a pattern of literals."""
+        if len(body.statements) != 1 or len(default.statements) != 1:
+            return False
+        result, fallback = body.statements[0], default.statements[0]
+        if not (
+            isinstance(result, IRReturn)
+            and isinstance(fallback, IRReturn)
+            and isinstance(fallback.value, IRConst)
+            and fallback.value.const_type == IRConst.ConstType.BOOL
+            and fallback.value.value is False
+            and isinstance(result.value, IRBoolExpr)
+        ):
+            return False
+        tests: List[Tuple[int, IRConst]] = []
+
+        def collect(expr: Optional[IRExpression]) -> bool:
+            if not isinstance(expr, IRBoolExpr):
+                return False
+            if expr.op == IRBoolExpr.CompareType.AND:
+                return collect(expr.left) and collect(expr.right)
+            if expr.op != IRBoolExpr.CompareType.EQ:
+                return False
+            read, const = expr.left, expr.right
+            if isinstance(read, IRConst):
+                read, const = const, read
+            if isinstance(read, IRCast):
+                read = read.expr
+            if not (
+                isinstance(read, IREnumField)
+                and read.value == value
+                and isinstance(const, IRConst)
+                and const.const_type
+                in (IRConst.ConstType.INT, IRConst.ConstType.FLOAT, IRConst.ConstType.STRING)
+            ):
+                return False
+            slot = self._valid_field(read, pattern)
+            if slot is None or slot in pattern.slots or any(slot == s for s, _ in tests):
+                return False
+            tests.append((slot, const))
+            return True
+
+        if not collect(result.value):
+            return False
+        for slot, const in tests:
+            pattern.slots[slot] = const
+        result.value = IRConst(self.func.code, IRConst.ConstType.BOOL, value=True)
+        return True
+
+    def _bind_expression_reads(self, body: IRBlock, value: IRLocal, pattern: IREnumPattern) -> None:
+        """Bind the payload reads left inside a case (`x == 0` on `e.param0`, not assigned to a
+        local first) to pattern variables. A constructor's payload cannot change and the case only
+        runs once the constructor matched, so reading it on entry is the same as reading it where
+        it is used; the enum value itself must stay the one tested."""
+        reads: List[IREnumField] = []
+        seen: Set[int] = set()
+
+        def visit(node: IRStatement) -> bool:
+            if id(node) in seen:
+                return True
+            seen.add(id(node))
+            if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target == value:
+                return False  # the value is reassigned: later reads are of another one
+            if isinstance(node, IREnumField) and node.binding is None and node.value == value:
+                reads.append(node)
+            return all(visit(child) for child in node.get_children())
+
+        if not visit(body):
+            return
+        for field in reads:
+            slot = self._valid_field(field, pattern)
+            if slot is None:
+                continue
+            existing = pattern.slots.get(slot)
+            if existing is None:
+                binding = self._fresh_binding(field)
+                pattern.slots[slot] = binding
+            elif isinstance(existing, IRLocal) and existing.is_enum_binding:
+                binding = existing
+            else:
+                continue
+            field.binding = binding
 
     def _fresh_binding(self, field: IREnumField) -> IRLocal:
         names = {local.name for local in self.func.all_locals}
@@ -623,6 +711,8 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
             IRConst.ConstType.GLOBAL_STRING,
             value=cast(Enum, value.get_type().definition).constructs[index].name.resolve(self.func.code),
         )
+        if not self._literal_patterns(body, default, value, root):
+            self._bind_expression_reads(body, value, root)
         switch = IRSwitch(self.func.code, value, {key: body}, default).adopt(*removed)
         switch.enum_patterns[key] = root
         return switch, 1 if assignment is None else 2

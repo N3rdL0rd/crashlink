@@ -1365,6 +1365,9 @@ def _expression_to_haxe(
             return "false"
         elif expr.op in (IRBoolExpr.CompareType.OR, IRBoolExpr.CompareType.AND):
             sym = "||" if expr.op == IRBoolExpr.CompareType.OR else "&&"
+            matched = _enum_match_prefix(expr, code, ir_function) if sym == "&&" else None
+            if matched is not None:
+                return matched
             left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, sym)
             right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, sym)
             return f"{left} {sym} {right}"
@@ -1650,6 +1653,8 @@ def _expression_to_haxe(
         return f"Type.enumIndex({inner})"
 
     elif isinstance(expr, IREnumField):
+        if expr.binding is not None:
+            return expr.binding.name
         if (
             isinstance(expr.value, IRLocal)
             and getattr(ir_function, "_ctx_param", None) == expr.value.name
@@ -3783,6 +3788,80 @@ def _inline_block_closure(
     return f"function({params}){ret} {{\n{indented}\n}}"
 
 
+def _conjuncts(expr: IRExpression) -> List[IRExpression]:
+    if isinstance(expr, IRBoolExpr) and expr.op == IRBoolExpr.CompareType.AND:
+        assert expr.left is not None and expr.right is not None
+        return _conjuncts(expr.left) + _conjuncts(expr.right)
+    return [expr]
+
+
+def _enum_match_prefix(expr: IRBoolExpr, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+    """`e.match(Ctor(_, 0))` for `enumIndex(e) == K && e.param1 == 0 && ...`.
+
+    A pattern with literal payloads compiles to the constructor test followed by the payload
+    comparisons, in order, and reads the payloads straight from the value. Only a leading run of
+    such comparisons becomes the pattern; whatever follows stays a plain conjunction."""
+    parts = _conjuncts(expr)
+
+    def sides(part: IRExpression) -> Optional[Tuple[IRExpression, IRConst]]:
+        if not (isinstance(part, IRBoolExpr) and part.op == IRBoolExpr.CompareType.EQ):
+            return None
+        if isinstance(part.right, IRConst):
+            return cast(IRExpression, part.left), part.right
+        if isinstance(part.left, IRConst) and part.right is not None:
+            return part.right, part.left
+        return None
+
+    head = sides(parts[0])
+    if head is None or not isinstance(head[0], IREnumIndex) or head[1].const_type != IRConst.ConstType.INT:
+        return None
+    value = head[0].value
+    enum_def = value.get_type().definition
+    index = head[1].value.value if hasattr(head[1].value, "value") else head[1].value
+    if not isinstance(value, IRLocal) or not isinstance(enum_def, Enum) or not isinstance(index, int):
+        return None
+    if not 0 <= index < len(enum_def.constructs):
+        return None
+    construct = enum_def.constructs[index]
+    slots = ["_"] * len(construct.params)
+    used = 1
+    for part in parts[1:]:
+        pair = sides(part)
+        if pair is None:
+            break
+        read, const = pair
+        if isinstance(read, IRCast):
+            read = read.expr
+        if not (
+            isinstance(read, IREnumField)
+            and read.value == value
+            and read.constructor_index == index
+            and read.field_name.startswith("param")
+            and const.const_type in (IRConst.ConstType.INT, IRConst.ConstType.FLOAT, IRConst.ConstType.STRING)
+        ):
+            break
+        slot = int(read.field_name.removeprefix("param"))
+        if slot >= len(slots) or slots[slot] != "_":
+            break
+        literal = _expression_to_haxe(const, code, ir_function)
+        if (
+            const.const_type == IRConst.ConstType.FLOAT
+            and read.get_type().kind.value == Type.Kind.DYN.value
+            and re.fullmatch(r"-?\d{1,9}\.0", literal)
+        ):
+            literal = literal[:-2]  # a Dynamic payload compared with a whole number: the Int literal
+        slots[slot] = literal
+        used += 1
+    if used == 1:
+        return None
+    receiver = _expression_to_haxe(value, code, ir_function)
+    name = f"{destaticify(disasm._enum_name(code, enum_def))}.{disasm.enum_construct_name(code, enum_def, index)}"
+    rendered = f"{receiver}.match({name}({', '.join(slots)}))"
+    for part in parts[used:]:
+        rendered += f" && {_expr_to_haxe_with_precedence(part, code, ir_function, '&&')}"
+    return rendered
+
+
 def _split_params(text: str) -> List[str]:
     """The top-level comma-separated parts of a parameter list (types may contain commas and arrows)."""
     parts, depth, current = [], 0, ""
@@ -5336,6 +5415,16 @@ def _enum_pattern_to_haxe(pattern: IREnumPattern, code: Bytecode) -> str:
     params = []
     for index in range(len(construct.params)):
         slot = pattern.slots.get(index)
+        if isinstance(slot, IRConst):
+            literal = _expression_to_haxe(slot, code, None)
+            if (
+                slot.const_type == IRConst.ConstType.FLOAT
+                and construct.params[index].resolve(code).kind.value == Type.Kind.DYN.value
+                and re.fullmatch(r"-?\d{1,9}\.0", literal)
+            ):
+                literal = literal[:-2]  # a Dynamic payload compared with a whole number: the Int literal
+            params.append(literal)
+            continue
         params.append(
             _enum_pattern_to_haxe(slot, code)
             if isinstance(slot, IREnumPattern)
@@ -6027,7 +6116,7 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
         for slot in pattern.slots.values():
             if isinstance(slot, IRLocal):
                 pattern_locals.add(slot.name)
-            else:
+            elif isinstance(slot, IREnumPattern):
                 collect_pattern(slot)
 
     def visit(stmt: IRStatement) -> None:

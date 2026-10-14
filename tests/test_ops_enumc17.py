@@ -62,6 +62,33 @@ def _same_signature(original: Bytecode, recompiled: Bytecode, name: str) -> bool
     return a.digest == b.digest
 
 
+def test_literal_payload_pattern_is_written_as_match(tmp_path: Path) -> None:
+    # `case Bar(0)` tests the constructor and compares the payload read straight from the value;
+    # `Type.enumParameters(x)[0]` is a call and a null check the original does not have.
+    source = """
+private enum FooBar {
+    Foo;
+    Bar(value:Any);
+}
+
+class Main {
+    static function test(bar:FooBar):Bool {
+        return switch (bar) {
+            case Bar(0): true;
+            case _: false;
+        }
+    }
+
+    static function main() {
+        Sys.println(test(Bar(0)) + " " + test(Bar(1)) + " " + test(Foo));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert expected == actual
+    assert _same_signature(original, recompiled, "Main.test")
+
+
 def test_enum_parameter_built_from_a_structure_field_keeps_the_array_element_type(tmp_path: Path) -> None:
     # `Album(d.tracks)`: no `alloc_array` builds the array, it comes out of the structure's field,
     # whose element type the other functions' literals give. `Array<Dynamic>` would be an ArrayDyn.
