@@ -94,7 +94,13 @@ from .decomp import (
 )
 from .decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
 from .decomp.opt.arraytypes import function_return_elem_type, recover_closure_param_elem_types
-from .decomp.opt.clean import default_arg_regs, default_arg_value, overriding_default_arg_regs
+from .decomp.opt.clean import (
+    default_arg_regs,
+    default_arg_value,
+    nullable_basic_name,
+    optional_basic_name,
+    overriding_default_arg_regs,
+)
 from .decomp.inline_calls import inline_index, is_inline_template
 
 
@@ -896,8 +902,7 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], 
     # by type; `null` is not accepted for a basic type. Only when no later argument could be
     # taken for it, i.e. none has the same type.
     def _basic(param: object) -> str:
-        inner = param.type.resolve(code) if isinstance(param, Ref) else None
-        return disasm.type_name(code, inner) if inner is not None else ""
+        return optional_basic_name(code, param)
 
     kept = []
     for i, text in enumerate(rendered):
@@ -907,7 +912,7 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], 
             and arg.const_type == IRConst.ConstType.NULL
             and isinstance(params[i], Ref)
             and all(
-                _basic(params[i]) != disasm.type_name(code, call_args[j].get_type())
+                _basic(params[i]) != nullable_basic_name(code, call_args[j].get_type())
                 for j in range(i + 1, len(rendered))
             )
             and all(_basic(params[i]) != _basic(params[j]) for j in range(i + 1, len(rendered)))
