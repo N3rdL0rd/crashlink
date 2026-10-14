@@ -1,8 +1,18 @@
 """Closure capture contexts decompile back to the lambdas they came from."""
 
+import shutil
 from pathlib import Path
 
+import pytest
+
+from crashtest.behavior import resolve_hl_runtime
 from tests.test_ops_enums import roundtrip
+
+
+@pytest.fixture(autouse=True)
+def _tools() -> None:
+    if not shutil.which("haxe") or resolve_hl_runtime() is None:
+        pytest.skip("project round trips require Haxe and HashLink")
 
 
 def test_lambda_capturing_a_loop_variable_inlines_without_a_context_enum(tmp_path: Path) -> None:
