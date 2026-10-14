@@ -89,3 +89,29 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.f")
+
+
+def test_pattern_match_default_copied_under_each_test_keeps_one_block_per_copy(tmp_path: Path) -> None:
+    source = """
+private class Node<T> {
+    public var cur:T;
+    public var next:Null<Node<T>>;
+    public function new(cur) { this.cur = cur; }
+}
+class Main {
+    static function test() {
+        var a = "";
+        switch (new Node(1)) {
+            case { cur: 1, next: ({ cur : 2 }) }:
+                a = "assert";
+            default:
+                a = 'correct';
+        }
+        eq("correct", a);
+    }
+    static function eq(x:String, y:String) { Sys.println(x == y); }
+    static function main() { test(); }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Main.test")
