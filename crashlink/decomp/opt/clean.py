@@ -941,6 +941,15 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 return None
             if not (self._safe_arm(in_branch.value) and self._safe_arm(fallthrough.value)):
                 return None
+            # `return c` materialises its bool through a joined register; two
+            # direct `return true` / `return false` arms are `if (c) return true;
+            # return false;` in the source, and a recompile of `return c` would
+            # change the CFG.
+            if (
+                self._bool_const(in_branch.value) is not None
+                and self._bool_const(fallthrough.value) is not None
+            ):
+                return None
             expr = self._make_ternary(
                 cond_stmt.condition, in_branch.value, fallthrough.value, self._type_index(in_branch.value)
             )

@@ -52,3 +52,17 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.h")
+
+
+def test_if_return_true_else_false_is_not_folded_into_return_cond(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function f(a:Int, b:Int):Bool { if (a == b) { return true; } return false; }
+    static function h(a:Int, b:Int):Bool { if (a == b) return false; return true; }
+    static function g(a:Int, b:Int):Bool { return a == b; }
+    static function main() { Sys.println([f(1, 2), g(1, 1), h(1, 2)].toString()); }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    for name in ("$Main.f", "$Main.g", "$Main.h"):
+        assert _same(original, recompiled, name), name
