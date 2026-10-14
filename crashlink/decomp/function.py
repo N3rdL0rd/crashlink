@@ -598,7 +598,11 @@ class IRFunction:
             # A same-named variable in another register still read after this
             # definition is a distinct live value, not the same source variable.
             for i, loc in enumerate(self.locals):
-                if i != reg_idx and loc.name == name and self._read_after(i, defining_op_idx):
+                if (
+                    i != reg_idx
+                    and loc.name == name
+                    and (self._read_after(i, defining_op_idx) or self._captured_before(i, defining_op_idx))
+                ):
                     existing_names.add(name)
         while name in existing_names:
             name = f"{base_name}{suffix}"
@@ -625,6 +629,16 @@ class IRFunction:
                 return True
             if _op_writes(op) == reg:
                 return False
+        return False
+
+    def _captured_before(self, reg: int, op_idx: int, since: int = 0) -> bool:
+        """True if `reg` is bound as the captured value of an anonymous closure in [since, op_idx)."""
+        for idx in range(since, op_idx):
+            op = self.ops[idx]
+            if op.op == "InstanceClosure" and op.df["obj"].value == reg:
+                fun = op.df["fun"].resolve(self.code)
+                if isinstance(fun, Function) and self.code.partial_func_name(fun) in (None, "<none>"):
+                    return True
         return False
 
     def _has_untracked_reuse(self, reg: int) -> bool:
@@ -919,6 +933,9 @@ class IRFunction:
                 current = self.locals[reg_idx]
                 if current.name != name:
                     self._split_local(reg_idx, name, defining_op_idx=op_idx)
+                elif self._captured_before(reg_idx, op_idx, current.defining_op_idx or 0):
+                    # A closure captured the old value by value, so a same-named write is a new `var`.
+                    self._split_local(reg_idx, name, defining_op_idx=op_idx, avoid_same_reg=True)
             return
         # No debug name at this op. If it still writes a register that currently
         # holds a real (debug-sourced) name, and the write clearly doesn't derive
@@ -1199,6 +1216,25 @@ class IRFunction:
         for i, local in enumerate(self.locals):
             name_to_regs.setdefault(local.name, []).append(i)
         for name, regs in name_to_regs.items():
+            if len(regs) <= 1:
+                continue
+            # A variable a closure captured by value is never reassigned (that would
+            # put it in a cell): a same-named later register is a new `var`.
+            ordered = sorted(regs, key=lambda r: self._reg_first_assign.get(r, float("inf")))
+            split = 0
+            for k, r in enumerate(ordered[1:], 1):
+                start = self._reg_first_assign.get(r)
+                if (
+                    start is not None
+                    and start > 0
+                    and any(self._captured_before(e, start) for e in ordered[:k])
+                ):
+                    split += 1
+                    self.locals[r].name = f"{name}{split}"
+                    for assigned in self._op_assigns.values():
+                        if assigned.get(r) == name:
+                            assigned[r] = self.locals[r].name
+                    regs = [x for x in regs if x != r]
             if len(regs) <= 1:
                 continue
             typed_regs: Dict[int, List[int]] = {}

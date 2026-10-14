@@ -3435,8 +3435,21 @@ def _inline_closure(
     params, body = entry
     # The environment reaches the lambda by closing over the very same local;
     # any other binding expression would capture a copy.
-    if not params or params[0] != obj_str or len(params) - 1 != extra_arg_count:
+    if not params or len(params) - 1 != extra_arg_count:
         return None
+    if params[0] != obj_str:
+        # The captured local is named differently here than in the closure (a shadowing
+        # `var r` became `r1`): the lambda closes over the same local under its new name.
+        old = params[0]
+        if (
+            not (old.isidentifier() and obj_str.isidentifier())
+            or obj_str == "this"
+            or old in params[1:]
+            or obj_str in params
+            or re.search(rf"\b{re.escape(obj_str)}\b|\bvar\s+{re.escape(old)}\b", body)
+        ):
+            return None
+        body = re.sub(rf"(?<![\w.]){re.escape(old)}\b", obj_str, body)
     getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
     return f"({', '.join(params[1:])}) -> {body}"
 

@@ -54,3 +54,22 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_shadowing_variable_captured_by_a_closure_is_a_new_variable(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function call(f:Void->String) return f();
+    static function main() {
+        var r = ~/a+/;
+        Sys.println(r.match("aa"));
+        Sys.println(call(function() return r.matched(0)));
+        var r = ~/b/;
+        Sys.println(r.match("b"));
+        Sys.println(call(function() return r.matched(0)));
+    }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "var r1" in text
+    assert _same(original, recompiled, "$Main.main")
