@@ -109,3 +109,17 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "new Array()" in text
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_dynamic_addition_of_two_strings_stays_dynamic(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function main() {
+        var v:Dynamic = "foo";
+        v += v;
+        Sys.println(v);
+    }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Main.main")

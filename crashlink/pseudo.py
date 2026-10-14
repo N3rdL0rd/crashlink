@@ -1699,10 +1699,15 @@ def _expression_to_haxe(
                     # Dynamic addition: the result stays Dynamic even with a String operand, so
                     # keep one side Dynamic or Haxe types `"4" + b` as String at its use.
                     left, right = expr.args
-                    left_str = _expression_to_haxe(left, code, ir_function)
-                    if left.get_type().kind.value != Type.Kind.DYN.value:
-                        left_str = f"({left_str} : Dynamic)"
-                    return f"({left_str} + {_expression_to_haxe(right, code, ir_function)})"
+                    operands = []
+                    for operand in (left, right):
+                        text = _expression_to_haxe(operand, code, ir_function)
+                        if operand.get_type().kind.value != Type.Kind.DYN.value:
+                            # A String operand beside a Dynamic one is a String concatenation; only
+                            # two Dynamic operands add through Std.__add__.
+                            text = f"({text} : Dynamic)"
+                        operands.append(text)
+                    return f"({operands[0]} + {operands[1]})"
                 rendered = _render_string_concat(expr, code, ir_function)
                 if rendered is not None:
                     return rendered
