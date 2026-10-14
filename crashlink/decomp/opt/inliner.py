@@ -38,6 +38,7 @@ from ..ir import (
     IRThrow,
     IRTrace,
     IRSwitch,
+    IRTernary,
     IRPrimitiveJump,
     IRWhileLoop,
     IRForEachLoop,
@@ -2742,6 +2743,11 @@ class IRTerminalValueInliner(_ReferenceAwareOptimizer):
                 if not isinstance(nxt, (IRReturn, IRThrow)) or nxt.value is None:
                     continue
                 if not isinstance(stmt.expr, IRExpression):
+                    continue
+                # `return c ? a : b` makes Haxe return from each arm; a ternary
+                # joined into a temp that is then returned is `var t = c ? a : b;
+                # return t` (e.g. an inlined body), whose join block must survive.
+                if isinstance(stmt.expr, IRTernary) and isinstance(nxt, IRReturn):
                     continue
                 if nxt.value == stmt.target:
                     nxt.value = stmt.expr
