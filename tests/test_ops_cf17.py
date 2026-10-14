@@ -77,3 +77,15 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.each")
+
+
+def test_call_argument_of_trace_inside_try_stays_nested_in_the_call(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function risky(n:Int):Int { return n * 2; }
+    static function f(n:Int) { try { trace(risky(n)); } catch (e:String) { trace(e); } }
+    static function main() { f(1); }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Main.f")

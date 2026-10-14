@@ -1591,6 +1591,16 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                     count += self._count_expr_local(child, local)
         return count
 
+    def _read_only_by(self, stmt: IRStatement, local: IRLocal) -> bool:
+        """True if `stmt` is a plain statement (no nested control flow) that holds every
+        read of `local` in the whole function, so whatever hazard surrounds the
+        definition (a try body, a loop) cannot carry the value to another reader."""
+        if isinstance(stmt, (IRConditional, IRTryCatch, IRSwitch, IRPrimitiveLoop, IRWhileLoop)):
+            return False
+        if self._use_is_speculative(stmt):
+            return False
+        return self._count_local_reads(stmt, local) == self._count_local_reads(self.func.block, local)
+
     def _count_local_reads(
         self, stmt: IRStatement, local: IRLocal, _visited: Optional[Set[int]] = None
     ) -> int:
@@ -2425,7 +2435,7 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                                 if rebinds
                                 or (inside_loop_body and self._provably_loop_fresh(block, i, temp_local))
                                 else (
-                                    hazardous
+                                    (hazardous and not self._read_only_by(next_stmt, temp_local))
                                     or not _ScopedLocalLifetime(self.func.block).dead_in(
                                         _Continuation.after(block.statements, i + 2, continuation), temp_local
                                     )
