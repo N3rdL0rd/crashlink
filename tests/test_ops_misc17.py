@@ -93,3 +93,19 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "Main.sub")
+
+
+def test_new_array_is_not_written_as_an_array_literal(tmp_path: Path) -> None:
+    source = """
+class Foo { public function new() {} }
+class Main {
+    static function main() {
+        var a = new Array<Foo>();
+        a.push(new Foo());
+        Sys.println(a.length);
+    }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "new Array()" in text
+    assert _same(original, recompiled, "$Main.main")

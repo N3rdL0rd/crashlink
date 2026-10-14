@@ -1987,12 +1987,11 @@ def _expression_to_haxe(
             # folded): an empty literal does not satisfy the structure.
             return "cast {}" if type_name != "Virtual[]" else "{}"
         elif type_name == "hl.types.ArrayObj" and not expr.constructor_args:
-            # `new ArrayObj()` is Haxe's `new Array<T>()` / `[]` for typed
-            # object arrays. Render as `[]` so Haxe infers the element type
-            # from context (e.g. the local/param's declared Array<T>).
+            # `new ArrayObj()` is Haxe's `new Array<T>()`; a literal `[]` allocates the native
+            # array and wraps it instead. The context (the local's declared Array<T>) gives T.
             # ArrayDyn (`new Array<Dynamic>()`) uses a different allocation
             # pattern, so leave it as `new Array<Dynamic>()`.
-            return "[]"
+            return "new Array()"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
             rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}{disasm.generic_arguments(code, expr.get_type())}({args_str})"
