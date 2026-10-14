@@ -664,6 +664,12 @@ class IRBoolMaterializationCollapser(TraversingIROptimizer):
                             IRBoolExpr.CompareType.NEQ,
                             IRBoolExpr.CompareType.NULL,
                             IRBoolExpr.CompareType.NOT_NULL,
+                            IRBoolExpr.CompareType.ULT,
+                            IRBoolExpr.CompareType.UGTE,
+                            IRBoolExpr.CompareType.NOT_LT,
+                            IRBoolExpr.CompareType.NOT_LTE,
+                            IRBoolExpr.CompareType.NOT_GT,
+                            IRBoolExpr.CompareType.NOT_GTE,
                         ):
                             cond = copy.copy(cond)
                             cond.invert()
@@ -1126,6 +1132,12 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 IRBoolExpr.CompareType.NEQ,
                 IRBoolExpr.CompareType.NULL,
                 IRBoolExpr.CompareType.NOT_NULL,
+                IRBoolExpr.CompareType.ULT,
+                IRBoolExpr.CompareType.UGTE,
+                IRBoolExpr.CompareType.NOT_LT,
+                IRBoolExpr.CompareType.NOT_LTE,
+                IRBoolExpr.CompareType.NOT_GT,
+                IRBoolExpr.CompareType.NOT_GTE,
             ):
                 inverted = copy.copy(cond)
                 inverted.invert()
