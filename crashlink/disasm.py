@@ -628,6 +628,8 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
     found: Dict[ArraySlot, Optional[Type]] = {}
     closures: Dict[int, List[Tuple[int, int]]] = {}  # closure findex -> (id(function type), offset)
     wrappers: Dict[int, bool] = {}
+    # Enum parameters built from another slot's array (`Album(this.tracks)`): they take its element type.
+    linked: List[Tuple[ArraySlot, ArraySlot]] = []
 
     def record(key: ArraySlot, elem: Optional[Type]) -> None:
         if elem is not None:
@@ -647,6 +649,7 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
         types: Dict[int, Type] = {}
         natives: Dict[int, Type] = {}
         arrays: Dict[int, Type] = {}
+        loaded: Dict[int, ArraySlot] = {}  # register -> the structure field slot it was read from
         # A `{}` the fields of a structure are set on by name before it is made that structure:
         # the element type of each array set on it so far.
         objects: Dict[int, Dict[str, Optional[Type]]] = {}
@@ -655,6 +658,7 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
                 types.clear()
                 natives.clear()
                 arrays.clear()
+                loaded.clear()
             df = op.df
             name = op.op
             if name == "SetField":
@@ -677,6 +681,8 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
                     for index, arg in enumerate(df["args"].value):
                         if index < len(params) and _is_arrayobj(code, params[index].resolve(code)):
                             record(("enum", id(enum), construct, index), arrays.get(arg.value))
+                            if arg.value in loaded:
+                                linked.append((("enum", id(enum), construct, index), loaded[arg.value]))
             elif name == "CallClosure":
                 signature = func.regs[df["fun"].value].resolve(code).definition
                 if isinstance(signature, Fun):
@@ -732,11 +738,21 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
                         held, value = arrays, natives[df["arg0"].value]
             for table in (types, natives, arrays):
                 table.pop(reg, None)
+            loaded.pop(reg, None)
+            if name == "Field":
+                owner = func.regs[df["obj"].value].resolve(code).definition
+                if isinstance(owner, Virtual) and df["field"].value < len(owner.fields):
+                    member = owner.fields[df["field"].value]
+                    if _is_arrayobj(code, member.type.resolve(code)):
+                        loaded[reg] = ("field", id(owner), member.name.resolve(code))
             objects.pop(reg, None)
             if held is not None and value is not None:
                 held[reg] = value
             if name == "New" and isinstance(func.regs[reg].resolve(code).definition, DynObj):
                 objects[reg] = {}
+    for key, source in linked:
+        if key not in found and found.get(source) is not None:
+            found[key] = found[source]
     # A closure's parameter takes what calls through its function type pass (past a bound receiver).
     passed: Dict[int, List[Tuple[int, Optional[Type]]]] = {}
     for key, elem in found.items():
