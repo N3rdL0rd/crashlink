@@ -72,3 +72,24 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_array_parameter_is_typed_by_a_call_in_a_condition(tmp_path: Path) -> None:
+    source = """
+class Foo { public var v:Int; public function new(v:Int) { this.v = v; } }
+class Main {
+    public function new() {}
+    function sub(a:Array<Foo>, b:Array<Foo>) { return a.length <= b.length; }
+    function run(xs:Array<Foo>, ys:Array<Foo>, n:Int) {
+        if (n > 0 && sub(xs, ys)) Sys.println("sub");
+        while (sub(ys, xs)) { ys.pop(); }
+    }
+    static function main() {
+        var xs = [new Foo(1)];
+        var ys = [new Foo(2), new Foo(3)];
+        new Main().run(xs, ys, 1);
+    }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "Main.sub")

@@ -597,11 +597,15 @@ def _share_type_variable_elements(
 
 
 def _collect_calls(stmt: IRStatement) -> List[IRCall]:
+    """The calls the statement itself evaluates: in its value, condition, scrutinee or returned expression
+    (not those of the blocks nested in it, which are statements of their own)."""
     calls: List[IRCall] = []
-    if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
-        _collect_calls_expr(stmt.expr, calls)
-    elif isinstance(stmt, IRCall):
+    if isinstance(stmt, IRExpression):
         _collect_calls_expr(stmt, calls)
+    else:
+        for child in stmt.get_children():
+            if isinstance(child, IRExpression):
+                _collect_calls_expr(child, calls)
     return calls
 
 
