@@ -9,6 +9,7 @@ from typing import Dict, Set, Tuple
 import pytest
 
 from crashlink import Bytecode, project
+from crashlink.core import Abstract, Enum, Obj
 from crashtest.behavior import resolve_hl_runtime
 
 SOURCE = """
@@ -60,7 +61,9 @@ def _type_names(code: Bytecode) -> Set[str]:
     return {
         t.definition.name.resolve(code)
         for t in code.types
-        if hasattr(t.definition, "name") and t.definition.name.value and t.definition.name.resolve(code)
+        if isinstance(t.definition, (Obj, Abstract, Enum))
+        and t.definition.name.value
+        and t.definition.name.resolve(code)
     }
 
 
