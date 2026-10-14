@@ -2037,6 +2037,15 @@ def _expression_to_haxe(
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         boxed = expr.expr
         if (
+            expr.unsafe
+            and isinstance(boxed, IRCall)
+            and isinstance(boxed.target, IRConst)
+            and isinstance(boxed.target.value, Function)
+            and generics.return_variable(code, boxed.target.value) is not None
+        ):
+            # The compiler's own cast of a call that returns a type variable: the context fixes it.
+            return inner
+        if (
             not expr.unsafe
             and expr.get_type().kind.value != Type.Kind.DYN.value
             and isinstance(boxed, IRCast)
@@ -3122,6 +3131,10 @@ def _generate_statements(
                     )
                 else:
                     val_str = _expression_to_haxe(stmt.value, code, ir_function)
+                    if getattr(ir_function, "_free_return", False) and not val_str.startswith("cast "):
+                        val_str = (
+                            f"cast {val_str}" if re.fullmatch(r"[\w.]+", val_str) else f"cast ({val_str})"
+                        )
                     output_lines.append(f"{indent}return {val_str};")
             else:
                 output_lines.append(f"{indent}return;")
@@ -4385,6 +4398,8 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             return_type_str = class_ret
         elif returned_variable is not None:
             return_type_str = _type_variable_name(returned_variable + variable_offset)
+            # No parameter has the variable's type: what is returned is converted to it.
+            setattr(ir_func, "_free_return", returned_variable not in variables.values())
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor or abstract_constructor:
@@ -4394,9 +4409,14 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     ret_decl = f": {return_type_str}" if return_type_str else ""
     type_params = (
         "<"
-        + ", ".join(_type_variable_name(n + variable_offset) for n in sorted(set(variables.values())))
+        + ", ".join(
+            _type_variable_name(n + variable_offset)
+            for n in sorted(
+                {*variables.values(), *([] if returned_variable is None else [returned_variable])}
+            )
+        )
         + ">"
-        if isinstance(core_fun_type_def, Fun) and variables
+        if isinstance(core_fun_type_def, Fun) and (variables or returned_variable is not None)
         else ""
     )
     access_kw = "public "

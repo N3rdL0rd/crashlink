@@ -90,6 +90,16 @@ def _result_is_cast(caller: Function, op_index: int) -> bool:
     return following.op == "SafeCast" and following.df["src"].value == dst.value
 
 
+def _result_is_unsafely_cast(caller: Function, op_index: int) -> bool:
+    """True if the result of the call at `op_index` is cast without a check straight away: the
+    compiler's cast of the erased result of an instance method that returns a type variable."""
+    dst = caller.ops[op_index].df.get("dst")
+    if dst is None or op_index + 1 >= len(caller.ops):
+        return False
+    following = caller.ops[op_index + 1]
+    return following.op == "UnsafeCast" and following.df["src"].value == dst.value
+
+
 def _compute(code: Bytecode) -> Dict[int, _Variables]:
     index = code.xref_index()
     dyn_kind = Type.Kind.DYN.value
@@ -100,10 +110,11 @@ def _compute(code: Bytecode) -> Dict[int, _Variables]:
         if not isinstance(signature, Fun) or code.partial_func_name(func) == "__constructor__":
             continue
         arrays = {i for i, a in enumerate(signature.args) if _array_name(code, a) == "hl.types.ArrayDyn"}
+        returns_dyn = signature.ret.resolve(code).kind.value == dyn_kind
         dyn_params = [
             i for i, a in enumerate(signature.args) if a.resolve(code).kind.value == dyn_kind or i in arrays
         ]
-        if not dyn_params:
+        if not dyn_params and not returns_dyn:
             continue
         parent = {i: i for i in dyn_params}
 
@@ -115,6 +126,7 @@ def _compute(code: Bytecode) -> Dict[int, _Variables]:
 
         evidenced: set = set()
         result_cast = False
+        free_cast = False
         returned = (
             _returned_parameter(func, dyn_params)
             if signature.ret.resolve(code).kind.value == dyn_kind
@@ -144,17 +156,25 @@ def _compute(code: Bytecode) -> Dict[int, _Variables]:
                     if reg_type(q) == reg_type(p):
                         parent[find(q)] = find(p)
             result_cast = result_cast or returned is not None and _result_is_cast(caller, ref.opcode_index)
+            free_cast = free_cast or returns_dyn and _result_is_unsafely_cast(caller, ref.opcode_index)
         roots = {find(e) for e in evidenced}
         if result_cast and returned is not None:
             roots.add(find(returned))
-        if not roots:
+        if not roots and not free_cast:
             continue
         groups: Dict[int, int] = {}
         numbered = {}
         for p in dyn_params:
             if find(p) in roots:
                 numbered[p] = groups.setdefault(find(p), len(groups))
-        result[func.findex.value] = (numbered, numbered[returned] if returned in numbered else None)
+        if returned in numbered:
+            returned_variable: Optional[int] = numbered[returned]
+        elif free_cast and returned is None:
+            # A result no parameter carries, cast unchecked where the call is: a variable of its own.
+            returned_variable = len(groups)
+        else:
+            returned_variable = None
+        result[func.findex.value] = (numbered, returned_variable)
     return result
 
 

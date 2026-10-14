@@ -182,3 +182,27 @@ class Main {
 }
 """
     _check(tmp_path, source, "Main.loopCount", "Main.main")
+
+
+def test_instance_method_returning_its_own_type_variable(tmp_path: Path) -> None:
+    # The instance method's erased result is cast without a check where its type is fixed.
+    source = """
+class Child {
+    public var value:Null<Array<Int>>;
+    public function new() {}
+
+    public function forCast<T>(a:Array<Int>):T {
+        value = a.copy();
+        return cast this;
+    }
+}
+
+class Main {
+    static function main() {
+        var child = new Child();
+        var result:Child = child.forCast([10, 20, 30]);
+        Sys.println(result.value.length);
+    }
+}
+"""
+    _check(tmp_path, source, "Main.main")
