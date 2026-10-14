@@ -3071,6 +3071,11 @@ def _generate_statements(
                 # Haxe won't iterate Dynamic, but a Dynamic value checks as any type.
                 elem_type = disasm._haxe_annotation(code, stmt.elem.get_type())
                 array_str = f"({array_str} : Array<{elem_type}>)"
+            if isinstance(source, IRArrayLiteral) and not stmt.rerolled:
+                # Haxe unrolls `for (x in [1, 2, 3])` itself; a loop that survived in the
+                # bytecode iterated a temp (an inlined `[1, 2, 3].map(f)`), so bind one.
+                output_lines.append(f"{indent}var {elem_str}_src = {array_str};")
+                array_str = f"{elem_str}_src"
             output_lines.append(f"{indent}for ({elem_str} in {array_str}) {{")
             body_subs = render_subs.copy()
             output_lines.extend(

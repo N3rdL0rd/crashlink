@@ -1092,6 +1092,8 @@ class IRForEachLoop(IRStatement):
     elem: IRLocal
     array: IRExpression
     body: IRBlock
+    # True when the loop was rebuilt from an unrolled run, so its literal never existed in the bytecode.
+    rerolled: bool
 
     def __init__(self, code: Bytecode, elem: IRLocal, array: IRExpression, body: IRBlock):
         super().__init__(code)
@@ -1099,6 +1101,7 @@ class IRForEachLoop(IRStatement):
         self.array = array
         self.body = body
         self.comment = ""
+        self.rerolled = False
 
     def get_children(self) -> List[IRStatement]:
         return [self.elem, self.array, self.body]
