@@ -134,6 +134,11 @@ SAME = [
         "var d:Dynamic = p; if (d == null) return a(1); return a(2);",
         "var d:Dynamic = p; return a(2);",
     ),
+    (
+        "the position of a trace call",
+        "trace(p); return a(q);",
+        "\n\n\ntrace(p);\n\n return a(q);",
+    ),
     ("float constants", "return Std.int(3 / 2) + p;", "return 1 + p;"),
     (
         "a condition decided by a constant",
@@ -151,6 +156,7 @@ DIFFERENT = [
     ("subtraction operand order", "return p - q;", "return q - p;"),
     ("call order", "var x = a(p); var y = b(q); return x + y;", "var y = b(q); var x = a(p); return x + y;"),
     ("callee", "return a(p);", "return b(p);"),
+    ("a traced value", "trace(p); return a(q);", "trace(q); return a(q);"),
     (
         "a nullable value may be null",
         "var d:Null<Int> = p > 3 ? null : p; if (d == null) return a(1); return a(2);",

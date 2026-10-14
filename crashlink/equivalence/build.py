@@ -54,6 +54,15 @@ def _is_pos_infos(desc: str) -> bool:
     )
 
 
+_POS_FIELDS = frozenset({"fileName", "lineNumber", "className", "methodName"})
+
+
+def _is_dynamic_pos_infos(fields: Dict[Tuple[str, object], Node]) -> bool:
+    """A dynamic object with exactly the fields of a `haxe.PosInfos` (and nothing else but its extras)."""
+    names = {key for how, key in fields if how == "dyn"}
+    return all(how == "dyn" for how, _ in fields) and _POS_FIELDS <= names <= _POS_FIELDS | {"customParams"}
+
+
 def _normal_int(value: int, kind: int) -> int:
     """An integer constant as the register holds it: -16 and 4294967280 are one I32 value."""
     if kind in WIDTH:
@@ -249,7 +258,13 @@ class Builder:
 
     def materialise(self, lazy: Node, b: int) -> Node:
         info = self.pending.pop(lazy.id)
-        fields = info.fields
+        fields = dict(info.fields)
+        if self.ignore_positions and _is_dynamic_pos_infos(fields):
+            # `trace` builds its position as a dynamic object: where in the source it was written is
+            # not behaviour, exactly as for a structured `haxe.PosInfos`.
+            marker = self.g.pure("position", ())
+            for key in (("dyn", "fileName"), ("dyn", "lineNumber")):
+                fields[key] = marker
         real = self.effect(b, info.kind, lazy.attrs, nonnull=True, ty=lazy.ty)
         self.g.alias(lazy, real)
         self.facts.add(real.id)
