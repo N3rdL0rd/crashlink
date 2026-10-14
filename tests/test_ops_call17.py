@@ -59,3 +59,26 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "!(" not in text
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_interface_cast_of_a_variable_that_lives_on_is_written_as_a_cast(tmp_path: Path) -> None:
+    source = """
+interface I1 { }
+interface I2 { }
+class A implements I1 { public function new() {} }
+class Main {
+    static function eq(a:Dynamic, b:Dynamic) { Sys.println(a == b); }
+    static function exc(f:Void->Void) { try { f(); Sys.println("no"); } catch (e:Dynamic) { Sys.println("exc"); } }
+    static function test() {
+        var v = new A();
+        eq(cast(v, I1), v);
+        exc(function() cast(v, I2));
+        var w:I1 = cast(v, I1);
+        eq(w, v);
+    }
+    static function main() { test(); }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "Cast error" not in text
+    assert _same(original, recompiled, "$Main.test")

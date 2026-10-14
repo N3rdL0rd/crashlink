@@ -17,6 +17,7 @@ from ..ir import (
     IRExpression,
     IRLocal,
     IRPosInfos,
+    IRReturn,
     IRStatement,
     IRThrow,
 )
@@ -47,12 +48,71 @@ class IRCastCheckRecovery(_ReferenceAwareOptimizer):
     def visit_block(self, block: IRBlock) -> None:
         statements = block.statements
         i = 0
-        while i + 2 < len(statements):
+        while i + 1 < len(statements):
             if self._fold(statements, i):
                 continue
             i += 1
 
+    def _fold_in_place(self, statements: List[IRStatement], start: int) -> bool:
+        """`if (!check(Class, v) && v != null) throw "Cast error"` where `v` is a variable that lives
+        on: the check is `cast(v, Class)` at its one value use, a following `(T)v` argument or
+        initializer, or a statement of its own when nothing follows."""
+        check = statements[start]
+        if not (isinstance(check, IRConditional) and not check.false_block.statements):
+            return False
+        test = check.condition
+        if not (
+            isinstance(test, IRBoolExpr)
+            and isinstance(test.right, IRBoolExpr)
+            and test.right.left is not None
+        ):
+            return False
+        value = test.right.left
+        if not isinstance(value, IRLocal) or value.name in self._address_names:
+            return False
+        class_ref = self._checked_class(check, value)
+        if class_ref is None:
+            return False
+        replacement = IRClassCast(self.func.code, value, class_ref)
+        tail = statements[start + 1 :]
+        if all(
+            (isinstance(t, IRReturn) and t.value is None) or (isinstance(t, IRCast) and t.expr == value)
+            for t in tail
+        ):
+            replacement.adopt(check)
+            statements[start:] = [replacement] + [t for t in tail if isinstance(t, IRReturn)]
+            return True
+        user = statements[start + 1]
+        if isinstance(user, IRAssign):
+            inner = user.expr.expr if isinstance(user.expr, IRCast) else user.expr
+            if inner == value:
+                if isinstance(user.expr, IRCast):
+                    user.expr.expr = replacement
+                else:
+                    user.expr = replacement
+                del statements[start]
+                return True
+        call = user.expr if isinstance(user, IRAssign) else user
+        if not isinstance(call, IRCall):
+            return False
+        if call.target is not None and not isinstance(call.target, (IRConst, IRLocal)):
+            return False
+        for position, arg in enumerate(call.args):
+            if isinstance(arg, IRCast) and arg.expr == value:
+                if not all(
+                    isinstance(earlier, (IRConst, IRLocal, IRPosInfos)) for earlier in call.args[:position]
+                ):
+                    return False
+                arg.expr = replacement
+                del statements[start]
+                return True
+        return False
+
     def _fold(self, statements: List[IRStatement], start: int) -> bool:
+        if self._fold_in_place(statements, start):
+            return True
+        if start + 2 >= len(statements):
+            return False
         assign, check, user = statements[start], statements[start + 1], statements[start + 2]
         if not (
             isinstance(assign, IRAssign)
