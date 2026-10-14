@@ -54,3 +54,21 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "get(8.5)" in text
     assert _same(original, recompiled, "Main.t")
+
+
+def test_local_passed_by_reference_is_not_replaced_by_its_initial_value(tmp_path: Path) -> None:
+    source = """
+@:keep
+class Foo {
+    public function new() {}
+    public function bar(p:String) { Sys.println(p.length); }
+}
+class Main {
+    static function main() {
+        var foo:Dynamic = new Foo();
+        foo.bar(StringTools.urlDecode(""));
+    }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Main.main")

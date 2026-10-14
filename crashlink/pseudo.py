@@ -2442,6 +2442,9 @@ def _redefined_locals(stmt: IRStatement) -> Set[IRLocal]:
                     found.add(arr.target)
             elif isinstance(s.target, IRField) and isinstance(s.target.target, IRLocal):
                 found.add(s.target.target)
+        elif isinstance(s, (IRRef, IRRefNew)) and isinstance(s.target, IRLocal):
+            # A reference lets whatever it is handed to write the local.
+            found.add(s.target)
         for child in s.get_children():
             if isinstance(child, IRBlock):
                 for child_stmt in child.statements:
