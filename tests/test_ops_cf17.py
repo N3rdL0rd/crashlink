@@ -66,3 +66,14 @@ class Main {
     _text, original, recompiled = _roundtrip(tmp_path, source)
     for name in ("$Main.f", "$Main.g", "$Main.h"):
         assert _same(original, recompiled, name), name
+
+
+def test_for_in_over_a_parameter_keeps_the_iterator_copy_as_the_loop_preheader(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function each(itr:IntIterator, f:Int->Int) { for (x in itr) { f(x); } }
+    static function main() { each(new IntIterator(0, 3), function(x) return x); }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Main.each")

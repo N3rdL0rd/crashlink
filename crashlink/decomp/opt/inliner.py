@@ -296,6 +296,18 @@ class _ReferenceAwareOptimizer(TraversingIROptimizer):
         # `Std.string` conversion drops its count cell's `Ref`).
         self._address_sets: Optional[Tuple[Set[str], Set[int]]] = None
 
+    def _is_preheader_copy(self, stmt: IRStatement) -> bool:
+        """Whether `stmt` is one of the copies a function starts with right before its first
+        loop header (`for (x in it)` copies the iterator first). They are the loop's
+        preheader block, so dropping them merges the loop header into the entry block."""
+        ops = self.func.ops
+        leading = 0
+        while leading < len(ops) and ops[leading].op == "Mov":
+            leading += 1
+        if not (0 < leading < len(ops) and ops[leading].op == "Label"):
+            return False
+        return bool(stmt.src_op_idxs) and max(stmt.src_op_idxs) < leading
+
     def _address_taken_sets(self) -> Tuple[Set[str], Set[int]]:
         if self._address_sets is None:
             names: Set[str] = set()
@@ -764,7 +776,9 @@ class IRConditionInliner(_ReferenceAwareOptimizer):
                     i += 1
                     continue
 
-                if isinstance(assigned_local, IRLocal) and self._is_user_local(assigned_local):
+                if (isinstance(assigned_local, IRLocal) and self._is_user_local(assigned_local)) or (
+                    self._is_preheader_copy(current_stmt)
+                ):
                     new_statements.append(current_stmt)
                     i += 1
                     continue
@@ -2323,6 +2337,10 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                             new_statements.append(current_stmt)
                             i += 1
                             continue
+                    if self._is_preheader_copy(current_stmt):
+                        new_statements.append(current_stmt)
+                        i += 1
+                        continue
                     if isinstance(expr_to_inline, IRExpression) and _ScopedLocalLifetime(
                         self.func.block
                     ).reads(expr_to_inline, temp_local):
@@ -2519,6 +2537,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 temp_local = stmt.target
 
                 if self._is_user_local(temp_local) or self._is_address_taken(temp_local):
+                    continue
+                if self._is_preheader_copy(stmt):
                     continue
 
                 expr_to_inline = stmt.expr
