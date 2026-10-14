@@ -956,7 +956,7 @@ def _receiver_text(expr: IRExpression, code: Bytecode, ir_function: Optional[IRF
         and isinstance(expr.get_type().definition, Obj)
         and not text.startswith(("cast ", "(cast "))
     ):
-        return f"({text} : {disasm._haxe_annotation(code, expr.get_type())})"
+        return f"({text} : {mapargs.refine(disasm._haxe_annotation(code, expr.get_type()), expr.map_value)})"
     return text
 
 
@@ -1100,7 +1100,8 @@ def _array_literal_ascription(expr: IRArrayLiteral, code: Bytecode) -> Optional[
     erased = disasm._haxe_annotation(code, expr.recovered_elem_type) == "Array<Dynamic>"
     if expr.elements and not erased:
         return None
-    return _literal_type_annotation(expr, code)
+    annotation = _literal_type_annotation(expr, code)
+    return mapargs.refine(annotation, getattr(expr, "map_value", None)) if annotation is not None else None
 
 
 def _expression_to_haxe(
@@ -1458,7 +1459,7 @@ def _expression_to_haxe(
                 if interface is not None
                 else disasm._haxe_annotation(code, target_type)
             )
-            target_str = f"(cast {target_str} : {annotation})"
+            target_str = f"(cast {target_str} : {mapargs.refine(annotation, expr.target.map_value)})"
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
@@ -4429,6 +4430,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         local_types.pop(name, None)
     _tag_map_allocations(ir_func.block, code, func_core.findex.value, ir_func.all_locals)
     interfaces: Dict[str, Set[Optional[str]]] = {}
+    map_values: Dict[str, Optional[str]] = {}
     defs_of_web: Dict[int, List[int]] = {}
     for index, web in getattr(ir_func, "_web_of_def", {}).items():
         defs_of_web.setdefault(web, []).append(index)
@@ -4436,6 +4438,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         if local.name in local_types and local.reg_idx is not None:
             node = ("r", func_core.findex.value, local.reg_idx)
             local_types[local.name] = mapargs.refine(local_types[local.name], mapargs.value_type(code, node))
+            map_values.setdefault(local.name, mapargs.value_type(code, node))
             regs = func_core.regs
             if local.reg_idx >= len(regs) or regs[local.reg_idx].resolve(code) is not local.get_type():
                 interfaces.setdefault(local.name, set()).add(None)
@@ -4447,7 +4450,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         # A name several registers share is declared once: only as what they all are.
         only = next(iter(found))
         if len(found) == 1 and only is not None:
-            local_types[name] = disasm.type_to_haxe(only)
+            local_types[name] = mapargs.refine(disasm.type_to_haxe(only), map_values.get(name))
     receiver_types = _virtual_receiver_static_types(ir_func, code)
     for name, haxe_type in receiver_types.items():
         if name in local_types:
@@ -5615,7 +5618,8 @@ def _try_instance_method_call(
         and isinstance(first_arg.get_type().definition, Obj)
     ):
         # A dynamic value (`Any`) has no fields to call; name the class it is used as.
-        arg_expr_str = f"({arg_expr_str} : {disasm._haxe_annotation(code, first_arg.get_type())})"
+        annotation = disasm._haxe_annotation(code, first_arg.get_type())
+        arg_expr_str = f"({arg_expr_str} : {mapargs.refine(annotation, first_arg.map_value)})"
     elif _needs_receiver_parens(arg_expr_str):
         arg_expr_str = f"({arg_expr_str})"
     return f"{arg_expr_str}.{method_name}"
@@ -7564,10 +7568,12 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
         if (
             isinstance(stmt, IRAssign)
             and isinstance(stmt.target, IRLocal)
-            and isinstance(stmt.expr, IRNew)
+            and isinstance(stmt.expr, (IRNew, IRArrayLiteral))
             and stmt.target.reg_idx is not None
         ):
-            setattr(stmt.expr, "map_value", by_name.get(stmt.target.name))
+            setattr(
+                stmt.expr, "map_value", by_name.get(stmt.target.name, getattr(stmt.expr, "map_value", None))
+            )
         for child in stmt.get_children():
             visit(child)
 
