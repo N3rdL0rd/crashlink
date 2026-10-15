@@ -103,3 +103,19 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "isOfType" not in text
     assert _same(original, recompiled, "$Main.test")
+
+
+def test_map_of_maps_keeps_the_inner_value_type(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function show(a:Dynamic, b:Dynamic) { Sys.println(a == b); }
+    static function test() {
+        var results = ["home" => [1 => 1, 2 => 3]];
+        show(results["home"][1], 1);
+    }
+    static function main() { test(); }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "IntMap<Dynamic>" not in text
+    assert _same(original, recompiled, "$Main.test")

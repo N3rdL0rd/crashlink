@@ -110,6 +110,9 @@ def _compute(code: Bytecode) -> Dict[Node, str]:
         parent[find(a)] = find(b)
 
     annotations: Dict[int, str] = {}
+    # (map node, value node, erased annotation): the map holds maps, whose own value type
+    # is only known once they are solved.
+    nested: List[Tuple[Node, Node, str]] = []
 
     def value_name(type_index: int) -> Optional[str]:
         typ = code.types[type_index]
@@ -122,10 +125,14 @@ def _compute(code: Bytecode) -> Dict[Node, str]:
             annotations[key] = disasm._haxe_annotation(code, typ)
         return annotations[key]
 
-    def note(node: Node, type_index: int) -> None:
+    def note(node: Node, type_index: int, value_node: Optional[Node] = None) -> None:
         name = value_name(type_index)
-        if name is not None:
-            evidence.setdefault(node, set()).add(name)
+        if name is None:
+            return
+        if value_node is not None and type_index in map_types:
+            nested.append((node, value_node, name))
+            return
+        evidence.setdefault(node, set()).add(name)
 
     for func in code.functions:
         findex = func.findex.value
@@ -191,20 +198,44 @@ def _compute(code: Bytecode) -> Dict[Node, str]:
                         value = args[2]
                         if _boxed_by_to_dyn(func, index, value):
                             note(node, regs[value])
+                        elif is_map(value):
+                            note(node, regs[value], ("r", findex, value))
                     elif method == "get" and "dst" in df and index + 1 < len(func.ops):
                         follow = func.ops[index + 1]
                         if follow.op == "UnsafeCast" and follow.df["src"].value == df["dst"].value:
-                            note(node, regs[follow.df["dst"].value])
+                            cast_dst = follow.df["dst"].value
+                            note(node, regs[cast_dst], ("r", findex, cast_dst))
 
-    solved: Dict[Node, Set[str]] = {}
-    for node, names in evidence.items():
-        solved.setdefault(find(node), set()).update(names)
-    result: Dict[Node, str] = {}
-    for node in list(parent):
-        names = solved.get(find(node))
-        if names is not None and len(names) == 1:
-            result[node] = next(iter(names))
-    return result
+    def solve() -> Dict[Node, str]:
+        solved: Dict[Node, Set[str]] = {}
+        for node, names in evidence.items():
+            solved.setdefault(find(node), set()).update(names)
+        result: Dict[Node, str] = {}
+        for node in list(parent):
+            names = solved.get(find(node))
+            if names is not None and len(names) == 1:
+                result[node] = next(iter(names))
+        return result
+
+    result = solve()
+    # A map of maps is typed by the maps it holds, which are typed by their own values.
+    for node, value_node, erased in nested:
+        evidence.setdefault(node, set()).add(erased)
+        parent.setdefault(value_node, value_node)
+    for _ in range(4):
+        result = solve()
+        changed = False
+        for node, value_node, erased in nested:
+            inner = result.get(value_node)
+            refined = refine(erased, inner)
+            names = evidence[node]
+            if refined != erased and refined not in names:
+                names.discard(erased)
+                names.add(refined)
+                changed = True
+        if not changed:
+            break
+    return solve()
 
 
 def _boxed_by_to_dyn(func: Function, index: int, reg: int) -> bool:

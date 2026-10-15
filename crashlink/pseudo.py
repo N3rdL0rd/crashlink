@@ -957,8 +957,32 @@ def _receiver_text(expr: IRExpression, code: Bytecode, ir_function: Optional[IRF
         and isinstance(expr.get_type().definition, Obj)
         and not text.startswith(("cast ", "(cast "))
     ):
-        return f"({text} : {disasm._haxe_annotation(code, expr.get_type())})"
+        return f"({text} : {_cast_annotation(expr, code, ir_function)})"
     return text
+
+
+def _cast_annotation(expr: IRCast, code: Bytecode, ir_function: Optional[IRFunction]) -> str:
+    """The type a Dynamic value cast to a class is ascribed: a map read out of a map keeps its value type."""
+    annotation = disasm._haxe_annotation(code, expr.get_type())
+    held = _map_value_read(expr.expr, code, ir_function)
+    return held if held is not None and held.split("<")[0] == annotation.split("<")[0] else annotation
+
+
+def _map_value_read(expr: IRExpression, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+    """The recovered value type of the map `m` a `m.get(k)` reads, when that value is itself a map."""
+    if (
+        ir_function is None
+        or not isinstance(expr, IRCall)
+        or not isinstance(expr.target, IRConst)
+        or not isinstance(expr.target.value, Function)
+        or code.partial_func_name(expr.target.value) != "get"
+        or not expr.args
+        or not isinstance(expr.args[0], IRLocal)
+        or expr.args[0].reg_idx is None
+    ):
+        return None
+    held = mapargs.value_type(code, ("r", ir_function.func.findex.value, expr.args[0].reg_idx))
+    return held if held is not None and held.startswith("haxe.ds.") else None
 
 
 def _resolve_array_access(
@@ -5622,7 +5646,7 @@ def _try_instance_method_call(
         and isinstance(first_arg.get_type().definition, Obj)
     ):
         # A dynamic value (`Any`) has no fields to call; name the class it is used as.
-        arg_expr_str = f"({arg_expr_str} : {disasm._haxe_annotation(code, first_arg.get_type())})"
+        arg_expr_str = f"({arg_expr_str} : {_cast_annotation(first_arg, code, ir_function)})"
     elif _needs_receiver_parens(arg_expr_str):
         arg_expr_str = f"({arg_expr_str})"
     return f"{arg_expr_str}.{method_name}"
