@@ -1189,7 +1189,7 @@ class IRTernaryRecovery(TraversingIROptimizer):
         # `c ? a : b` writes one temp in its arms and copies it into the variable once
         # after the join; `if (c) { x = a; } else { x = b; }` copies in each arm, so
         # a ternary would add a join block the original did not have.
-        if not (t_checked or f_checked) and self._copies_into(t, t.target) and self._copies_into(f, f.target):
+        if not (t_checked or f_checked) and self._copies_into(t, t.target) and self._copies_into(f, t.target):
             return None
         # The shared target's declared type is the ternary's result type.
         expr = self._make_ternary(stmt.condition, t.expr, f.expr, t.target.type)
