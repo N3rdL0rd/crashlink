@@ -14,6 +14,7 @@ from ..ir import (
     IRClassCast,
     IRConditional,
     IRConst,
+    IRDowncast,
     IRExpression,
     IRLocal,
     IRPosInfos,
@@ -21,6 +22,7 @@ from ..ir import (
     IRStatement,
     IRThrow,
 )
+from . import TraversingIROptimizer
 from .inliner import _ReferenceAwareOptimizer
 
 
@@ -190,3 +192,55 @@ class IRCastCheckRecovery(_ReferenceAwareOptimizer):
         if not (isinstance(callee, IRConst) and "BaseType.check" in str(callee)):
             return None
         return test.args[0]
+
+
+class IRDowncastRecovery(TraversingIROptimizer):
+    """`if (check(Class, v)) { x = v; } else { x = null; }` is `x = Std.downcast(v, Class)`.
+
+    The compiler writes `Std.downcast` out as the `hl.BaseType.check` test selecting the value or
+    null. Spelled out again in source the test goes through the `Std.isOfType` call instead.
+    """
+
+    def visit_block(self, block: IRBlock) -> None:
+        for index, stmt in enumerate(block.statements):
+            replaced = self._recover(stmt)
+            if replaced is not None:
+                block.statements[index] = replaced
+
+    def _recover(self, stmt: IRStatement) -> Optional[IRStatement]:
+        if not isinstance(stmt, IRConditional):
+            return None
+        test = stmt.condition
+        if not (
+            isinstance(test, IRBoolExpr)
+            and test.op in (IRBoolExpr.CompareType.ISTRUE, IRBoolExpr.CompareType.ISFALSE)
+            and isinstance(test.left, IRCall)
+        ):
+            return None
+        call = test.left
+        callee = call.target
+        if not (
+            isinstance(callee, IRConst)
+            and "BaseType.check" in str(callee)
+            and len(call.args) == 2
+            and isinstance(call.args[0], IRConst)
+        ):
+            return None
+        selected, rejected = stmt.true_block.statements, stmt.false_block.statements
+        if test.op == IRBoolExpr.CompareType.ISFALSE:
+            selected, rejected = rejected, selected
+        if len(selected) != 1 or len(rejected) != 1:
+            return None
+        yes, no = selected[0], rejected[0]
+        if not (isinstance(yes, IRAssign) and isinstance(no, IRAssign) and yes.target == no.target):
+            return None
+        if not (isinstance(no.expr, IRConst) and no.expr.value is None):
+            return None
+        picked = yes.expr.expr if isinstance(yes.expr, IRCast) else yes.expr
+        value = call.args[1]
+        if not (isinstance(value, IRLocal) and picked == value):
+            return None
+        out = IRAssign(self.func.code, yes.target, IRDowncast(self.func.code, value, call.args[0]))
+        out.adopt(stmt)
+        out._no_user_inline = True
+        return out

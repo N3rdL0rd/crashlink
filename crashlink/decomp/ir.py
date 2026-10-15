@@ -1397,6 +1397,24 @@ class IRClassCast(IRExpression):
         return f"<IRClassCast: cast({self.value}, {self.class_ref})>"
 
 
+class IRDowncast(IRExpression):
+    """`Std.downcast(value, Class)`: the class test of `hl.BaseType.check` selecting the value or null."""
+
+    def __init__(self, code: Bytecode, value: IRExpression, class_ref: IRExpression):
+        super().__init__(code)
+        self.value = value
+        self.class_ref = class_ref
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Dyn")
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.value, self.class_ref]
+
+    def __repr__(self) -> str:
+        return f"<IRDowncast: Std.downcast({self.value}, {self.class_ref})>"
+
+
 class IRStringConvert(IRExpression):
     """Converts a value to its string representation at this evaluation point."""
 

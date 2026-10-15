@@ -82,3 +82,24 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "Cast error" not in text
     assert _same(original, recompiled, "$Main.test")
+
+
+def test_downcast_is_written_as_std_downcast(tmp_path: Path) -> None:
+    source = """
+class G { public function new() {} }
+class Main {
+    static function show(a:Dynamic, b:Dynamic) { Sys.println(a == b); }
+    static function test(v:Dynamic, arr:Array<Int>) {
+        var g:G = Std.downcast(v, G);
+        show(g, v);
+        var x:Array<Int> = Std.downcast(arr, Array);
+        show(x, arr);
+        x = Std.downcast(arr, Array);
+        show(x, null);
+    }
+    static function main() { test(new G(), [1, 2]); test("s", [3]); }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "isOfType" not in text
+    assert _same(original, recompiled, "$Main.test")

@@ -41,6 +41,7 @@ from .decomp import (
     IRContinue,
     IRCast,
     IRClassCast,
+    IRDowncast,
     IRNativeStub,
     IRClass,
     IRField,
@@ -1563,6 +1564,12 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRClassCast):
         return f"cast({_expression_to_haxe(expr.value, code, ir_function)}, {_expression_to_haxe(expr.class_ref, code, ir_function)})"
+
+    elif isinstance(expr, IRDowncast):
+        class_text = _expression_to_haxe(expr.class_ref, code, ir_function)
+        if class_text == "hl.types.ArrayBase":
+            class_text = "Array"  # the class object `Array` reaches HashLink as its base class
+        return f"Std.downcast({_expression_to_haxe(expr.value, code, ir_function)}, {class_text})"
 
     elif isinstance(expr, IRPostIncrement):
         target_text = _expression_to_haxe(expr.target, code, ir_function)
