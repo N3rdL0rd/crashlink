@@ -9,7 +9,7 @@ position as a comment.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from ... import disasm
 from ...core import Bytecode, Fun, Function, Virtual
@@ -24,6 +24,7 @@ from ..ir import (
     IRObjectLiteral,
     IRPosInfos,
     IRStatement,
+    IRTryCatch,
 )
 from . import TraversingIROptimizer
 
@@ -79,17 +80,98 @@ class IRPosInfosFolder(TraversingIROptimizer):
                 and isinstance(stmt.target, IRLocal)
                 and isinstance(stmt.expr, IRExpression)
                 and self._literal(stmt.expr) is not None
-                and self._mentions(stmt.target) == 2
             ):
                 call = next(
                     (c for c in self._calls(stmts[i + 1 :]) if c.args and c.args[-1] == stmt.target), None
                 )
-                if call is not None and self._position_param(call):
-                    self._tag(call, stmt.expr)
+                if call is not None and self._position_param(call) and self._mentions(stmt.target, True) == 2:
+                    if not self._tag(call, stmt.expr):
+                        if not (isinstance(call.target, IRConst) and isinstance(call.target.value, Function)):
+                            i += 1  # a call through a variable: the position was written by hand
+                            continue
+                        # A position the callee reads stays written out, at its one use: held in
+                        # a local first, the structure is allocated before the arguments before it.
+                        call.args[-1] = stmt.expr
                     call.adopt(stmt)  # the assignment's opcodes go with it
                     del stmts[i]
                     continue
+                if self._fold_into_cast(block, i):
+                    continue
             i += 1
+
+    def _trap_registers(self, block: IRBlock) -> Set[int]:
+        """Registers of the catch variables of the `try` bodies `block` lies in."""
+        found: Set[int] = set()
+        pending: List[IRStatement] = [self.func.block]
+        while pending:
+            node = pending.pop()
+            if isinstance(node, IRTryCatch):
+                reg = node.catch_local.reg_idx if node.catch_local is not None else None
+                if reg is not None and self._within(node.try_block, block):
+                    found.add(reg)
+            pending.extend(node.get_children())
+        return found
+
+    @staticmethod
+    def _within(outer: IRStatement, inner: IRStatement) -> bool:
+        pending: List[IRStatement] = [outer]
+        while pending:
+            node = pending.pop()
+            if node is inner:
+                return True
+            pending.extend(node.get_children())
+        return False
+
+    def _fold_into_cast(self, block: IRBlock, i: int) -> bool:
+        """`a = {..}; [t = a;] b = (a : PosInfos)`: build the literal where it is converted.
+
+        A literal read through a local is built dynamically once it meets the expected
+        structure; `cast {..}` is not. The compiler parks the structure in the register its
+        enclosing `try` catches into (`t`, or `a` itself), a store the catch overwrites."""
+        stmts = block.statements
+        stmt = stmts[i]
+        assert isinstance(stmt, IRAssign) and isinstance(stmt.target, IRLocal)
+        trap = self._trap_registers(block)
+        dead = {i} if stmt.target.reg_idx in trap else set()
+        j = i + 1
+        while j < len(stmts):
+            copy = stmts[j]
+            if not (
+                isinstance(copy, IRAssign)
+                and isinstance(copy.target, IRLocal)
+                and copy.target.reg_idx in trap
+                and copy.expr == stmt.target
+            ):
+                break
+            dead.add(j)
+            j += 1
+        follower = stmts[j] if j < len(stmts) else None
+        if not (
+            isinstance(follower, IRAssign)
+            and isinstance(follower.expr, IRCast)
+            and follower.expr.expr == stmt.target
+        ):
+            return False
+        if i not in dead and self._mentions(stmt.target, shared=True) != 2 + len(dead):
+            return False
+        if i in dead and any(self._mentions_in(stmts[j + 1 :], stmt.target)):
+            return False
+        follower.expr.expr = stmt.expr
+        for k in sorted(dead, reverse=True):
+            follower.adopt(stmts[k])
+            del stmts[k]
+        return True
+
+    @staticmethod
+    def _mentions_in(statements: List[IRStatement], local: IRLocal) -> List[bool]:
+        pending: List[IRStatement] = list(statements)
+        found: List[bool] = []
+        while pending:
+            node = pending.pop()
+            if isinstance(node, IRLocal) and node.name == local.name:
+                found.append(True)
+            pending.extend(node.get_children())
+        return found
 
     def _calls(self, statements: List[IRStatement]) -> List[IRCall]:
         found: List[IRCall] = []
@@ -101,13 +183,13 @@ class IRPosInfosFolder(TraversingIROptimizer):
             pending.extend(node.get_children())
         return found
 
-    def _mentions(self, local: IRLocal) -> int:
+    def _mentions(self, local: IRLocal, shared: bool = False) -> int:
         count = 0
         pending: List[IRStatement] = [self.func.block]
         seen = set()
         while pending:
             node = pending.pop()
-            if id(node) in seen:
+            if id(node) in seen and not shared:
                 continue
             seen.add(id(node))
             if isinstance(node, IRLocal) and node.name == local.name:
