@@ -3680,7 +3680,7 @@ def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[L
                     and all(_is_capture_variable(a, ir_func) for a in node.obj.args)
                 ):
                     continue
-                captured = cast(List[IRExpression], node.obj.args)
+                captured = node.obj.args
                 params, body = ctx_bodies[node.fun.findex.value]
                 if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
                     continue
@@ -3772,7 +3772,7 @@ def _hoist_one_context(
 ) -> bool:
     stmt = cast(IRAssign, block.statements[idx])
     ctx = cast(IRLocal, stmt.target)
-    captured = cast(List[IRExpression], cast(IREnumConstruct, stmt.expr).args)
+    captured = cast(IREnumConstruct, stmt.expr).args
     closures: List[IRBoundClosure] = []
     last_use = -1
     for j, later in enumerate(block.statements):
@@ -4063,8 +4063,8 @@ class _FunctionHeader:
     def __init__(self, params: str, returns: Optional[str]) -> None:
         self.params, self.returns = params, returns
 
-    def group(self, index: int) -> Optional[str]:
-        return self.params if index == 1 else self.returns
+    def group(self, index: int) -> str:
+        return self.params if index == 1 else self.returns or ""
 
 
 def _function_header(line: str) -> Optional[_FunctionHeader]:
