@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 import weakref
 from collections import OrderedDict
-from typing import Any, Callable, List, Optional, Dict, Tuple
+from typing import Any, Callable, Iterator, List, Optional, Dict, Tuple
 
 try:
     from tqdm import tqdm
@@ -776,7 +776,107 @@ def erased_array_slots(code: Bytecode) -> Dict[ArraySlot, Type]:
     return result
 
 
-def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
+RECURSIVE_STRUCTS_MODULE = "CrashlinkStructs"
+
+
+def recursive_structures(code: Bytecode) -> Dict[int, str]:
+    """The structures that contain themselves, by `id(definition)`, with the typedef each is named by.
+
+    `typedef A = { var f: A }` has no anonymous spelling: the structure can only be written
+    through a name, and naming it by its fields would leave one level of it open. Each is
+    declared in `CrashlinkStructs` (see `recursive_typedefs`)."""
+    cached = code._recursive_structs
+    if cached is not None:
+        return cached
+    nodes: Dict[int, Type] = {id(t.definition): t for t in code.types}
+    index: Dict[int, int] = {}
+
+    def children(typ: Type) -> List[int]:
+        definition = typ.definition
+        found: List[Type] = []
+        if isinstance(definition, Virtual):
+            found = [f.type.resolve(code) for f in definition.fields]
+        elif isinstance(definition, Fun):
+            found = [a.resolve(code) for a in definition.args] + [definition.ret.resolve(code)]
+        elif isinstance(definition, (Null, Ref)):
+            found = [definition.type.resolve(code)]
+        return [id(c.definition) for c in found]
+
+    # Tarjan's strongly connected components, iteratively: a structure is recursive when it
+    # lies in a component of more than one type, or points at itself.
+    low: Dict[int, int] = {}
+    order: Dict[int, int] = {}
+    on_stack: set[int] = set()
+    stack: List[int] = []
+    result: Dict[int, str] = {}
+    counter = 0
+    for root in nodes:
+        if root in order:
+            continue
+        work: List[Tuple[int, Iterator[int]]] = [(root, iter(children(nodes[root])))]
+        order[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on_stack.add(root)
+        while work:
+            node, kids = work[-1]
+            advanced = False
+            for kid in kids:
+                if kid not in nodes:
+                    continue
+                if kid not in order:
+                    order[kid] = low[kid] = counter
+                    counter += 1
+                    stack.append(kid)
+                    on_stack.add(kid)
+                    work.append((kid, iter(children(nodes[kid]))))
+                    advanced = True
+                    break
+                if kid in on_stack:
+                    low[node] = min(low[node], order[kid])
+            if advanced:
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+            if low[node] == order[node]:
+                component = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == node:
+                        break
+                for member in component:
+                    if isinstance(nodes[member].definition, Virtual) and (
+                        len(component) > 1 or member in children(nodes[member])
+                    ):
+                        index[member] = 0
+    for position, typ in enumerate(code.types):
+        if id(typ.definition) in index:
+            result[id(typ.definition)] = f"Rec{position}"
+    code._recursive_structs = result
+    return result
+
+
+def recursive_typedefs(code: Bytecode) -> str:
+    """The `CrashlinkStructs` module declaring every recursive structure a rendered type named."""
+    names = recursive_structures(code)
+    types = {id(t.definition): t for t in code.types}
+    done: set[int] = set()
+    lines: List[str] = []
+    while True:
+        pending = [key for key in code._recursive_used if key not in done]
+        if not pending:
+            break
+        for key in sorted(pending, key=lambda k: names[k]):
+            done.add(key)
+            lines.append(f"typedef {names[key]} = {_haxe_annotation(code, types[key], body=key)};")
+    return "\n".join(lines)
+
+
+def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False, body: Optional[int] = None) -> str:
     """Render retained signatures, falling back to the existing erased type map.
 
     Bound values must supply their destination type, not the receiver-inclusive
@@ -792,9 +892,18 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False) -> str:
         elem = slots.get(key) if _is_arrayobj(code, typ) else None
         return f"Array<{render(elem)}>" if elem is not None else render(typ)
 
+    recursive = recursive_structures(code)
+    opened: List[Optional[int]] = [body]
+
     def render(current: Type) -> str:
         definition = current.definition
         key = id(definition)
+        if key in recursive and not native:
+            if key == opened[0]:
+                opened[0] = None  # the typedef's own body: only its members refer to it by name
+            else:
+                code._recursive_used[key] = current
+                return f"{RECURSIVE_STRUCTS_MODULE}.{recursive[key]}"
         if key in active:
             return "Dynamic"
         active.add(key)
