@@ -27,12 +27,13 @@ from .core import (
     destaticify,
     is_static_name,
     gIndex,
+    tIndex,
     Virtual,
     Dyn,
     Null,
 )
 from . import disasm
-from . import abstracts, enumparams, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
+from . import abstracts, arrayelems, enumparams, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
 from .classgenerics import ScopeEntry, class_generics, method_root
 from .std_types import STD_TYPES
 from .decomp import (
@@ -961,7 +962,7 @@ def _receiver_text(expr: IRExpression, code: Bytecode, ir_function: Optional[IRF
         and isinstance(expr.get_type().definition, Obj)
         and not text.startswith(("cast ", "(cast "))
     ):
-        return f"({text} : {disasm._haxe_annotation(code, expr.get_type())})"
+        return f"({text} : {mapargs.refine(disasm._haxe_annotation(code, expr.get_type()), expr.map_value)})"
     return text
 
 
@@ -1105,7 +1106,8 @@ def _array_literal_ascription(expr: IRArrayLiteral, code: Bytecode) -> Optional[
     erased = disasm._haxe_annotation(code, expr.recovered_elem_type) == "Array<Dynamic>"
     if expr.elements and not erased:
         return None
-    return _literal_type_annotation(expr, code)
+    annotation = _literal_type_annotation(expr, code)
+    return mapargs.refine(annotation, getattr(expr, "map_value", None)) if annotation is not None else None
 
 
 def _expression_to_haxe(
@@ -1463,7 +1465,7 @@ def _expression_to_haxe(
                 if interface is not None
                 else disasm._haxe_annotation(code, target_type)
             )
-            target_str = f"(cast {target_str} : {annotation})"
+            target_str = f"(cast {target_str} : {mapargs.refine(annotation, expr.target.map_value)})"
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
@@ -2045,6 +2047,15 @@ def _expression_to_haxe(
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         boxed = expr.expr
         if (
+            expr.unsafe
+            and isinstance(boxed, IRCall)
+            and isinstance(boxed.target, IRConst)
+            and isinstance(boxed.target.value, Function)
+            and generics.return_variable(code, boxed.target.value) is not None
+        ):
+            # The compiler's own cast of a call that returns a type variable: the context fixes it.
+            return inner
+        if (
             not expr.unsafe
             and expr.get_type().kind.value != Type.Kind.DYN.value
             and isinstance(boxed, IRCast)
@@ -2151,6 +2162,9 @@ def _expression_to_haxe(
             # erased `Iterable<A>` of a generic parameter): the context only gives the last
             # one, so the first is ascribed or the class would convert to the last directly.
             return f"({inner} : {disasm._haxe_annotation(code, expr.expr.get_type())})"
+        if target_name == "hl.types.ArrayObj" and source_name == "hl.types.ArrayDyn":
+            # The one conversion between the two a `T` array makes: it is a cast, never implicit.
+            return f"(cast ({inner}))"
         if target_name in _ARRAY_WRAPPERS and source_name in _ARRAY_WRAPPERS:
             # ArrayObj/ArrayDyn are one Haxe `Array<T>`; the element type comes from the context,
             # and `(cast x : Array<Dynamic>)` would pin it to Dynamic.
@@ -3133,6 +3147,10 @@ def _generate_statements(
                     )
                 else:
                     val_str = _expression_to_haxe(stmt.value, code, ir_function)
+                    if getattr(ir_function, "_free_return", False) and not val_str.startswith("cast "):
+                        val_str = (
+                            f"cast {val_str}" if re.fullmatch(r"[\w.]+", val_str) else f"cast ({val_str})"
+                        )
                     output_lines.append(f"{indent}return {val_str};")
             else:
                 output_lines.append(f"{indent}return;")
@@ -4413,6 +4431,8 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             return_type_str = class_ret
         elif returned_variable is not None:
             return_type_str = _type_variable_name(returned_variable + variable_offset)
+            # No parameter has the variable's type: what is returned is converted to it.
+            setattr(ir_func, "_free_return", returned_variable not in variables.values())
 
     # Constructors do not declare a return type in Haxe.
     if is_constructor or abstract_constructor:
@@ -4420,11 +4440,17 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
 
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
+    constraints = generics.constraints(code, func_core) if variables else {}
     type_params = (
         "<"
-        + ", ".join(_type_variable_name(n + variable_offset) for n in sorted(set(variables.values())))
+        + ", ".join(
+            _type_variable_name(n + variable_offset) + _constraint_text(code, constraints.get(n))
+            for n in sorted(
+                {*variables.values(), *([] if returned_variable is None else [returned_variable])}
+            )
+        )
         + ">"
-        if isinstance(core_fun_type_def, Fun) and variables
+        if isinstance(core_fun_type_def, Fun) and (variables or returned_variable is not None)
         else ""
     )
     access_kw = "public "
@@ -4457,7 +4483,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     for name in unused_static_aliases:
         local_types.pop(name, None)
     _tag_map_allocations(ir_func.block, code, func_core.findex.value, ir_func.all_locals)
+    literal_arrays = _literal_array_types(ir_func.block, code)
     interfaces: Dict[str, Set[Optional[str]]] = {}
+    map_values: Dict[str, Optional[str]] = {}
     defs_of_web: Dict[int, List[int]] = {}
     for index, web in getattr(ir_func, "_web_of_def", {}).items():
         defs_of_web.setdefault(web, []).append(index)
@@ -4465,6 +4493,14 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         if local.name in local_types and local.reg_idx is not None:
             node = ("r", func_core.findex.value, local.reg_idx)
             local_types[local.name] = mapargs.refine(local_types[local.name], mapargs.value_type(code, node))
+            map_values.setdefault(local.name, mapargs.value_type(code, node))
+            local_types[local.name] = arrayelems.refine(
+                local_types[local.name], arrayelems.element_type(code, func_core, local.reg_idx)
+            )
+            if local.name in literal_arrays:
+                local_types[local.name] = arrayelems.refine(
+                    local_types[local.name], literal_arrays[local.name][len("Array<") : -1]
+                )
             regs = func_core.regs
             if local.reg_idx >= len(regs) or regs[local.reg_idx].resolve(code) is not local.get_type():
                 interfaces.setdefault(local.name, set()).add(None)
@@ -4476,7 +4512,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         # A name several registers share is declared once: only as what they all are.
         only = next(iter(found))
         if len(found) == 1 and only is not None:
-            local_types[name] = disasm.type_to_haxe(only)
+            local_types[name] = mapargs.refine(disasm.type_to_haxe(only), map_values.get(name))
     receiver_types = _virtual_receiver_static_types(ir_func, code)
     for name, haxe_type in receiver_types.items():
         if name in local_types:
@@ -5644,7 +5680,8 @@ def _try_instance_method_call(
         and isinstance(first_arg.get_type().definition, Obj)
     ):
         # A dynamic value (`Any`) has no fields to call; name the class it is used as.
-        arg_expr_str = f"({arg_expr_str} : {disasm._haxe_annotation(code, first_arg.get_type())})"
+        annotation = disasm._haxe_annotation(code, first_arg.get_type())
+        arg_expr_str = f"({arg_expr_str} : {mapargs.refine(annotation, first_arg.map_value)})"
     elif _needs_receiver_parens(arg_expr_str):
         arg_expr_str = f"({arg_expr_str})"
     return f"{arg_expr_str}.{method_name}"
@@ -7593,14 +7630,39 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
         if (
             isinstance(stmt, IRAssign)
             and isinstance(stmt.target, IRLocal)
-            and isinstance(stmt.expr, IRNew)
+            and isinstance(stmt.expr, (IRNew, IRArrayLiteral))
             and stmt.target.reg_idx is not None
         ):
-            setattr(stmt.expr, "map_value", by_name.get(stmt.target.name))
+            setattr(
+                stmt.expr, "map_value", by_name.get(stmt.target.name, getattr(stmt.expr, "map_value", None))
+            )
         for child in stmt.get_children():
             visit(child)
 
     visit(root)
+
+
+def _literal_array_types(root: IRStatement, code: Bytecode) -> Dict[str, str]:
+    """The `Array<T>` the array literal a local is assigned names, by local name (only where all agree)."""
+    seen: Set[int] = set()
+    found: Dict[str, Set[str]] = {}
+
+    def visit(stmt: IRStatement) -> None:
+        if id(stmt) in seen:
+            return
+        seen.add(id(stmt))
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRArrayLiteral)
+        ):
+            annotation = _literal_type_annotation(stmt.expr, code)
+            found.setdefault(stmt.target.name, set()).add(annotation or "")
+        for child in stmt.get_children():
+            visit(child)
+
+    visit(root)
+    return {name: next(iter(types)) for name, types in found.items() if len(types) == 1 and "" not in types}
 
 
 def _scope_text(code: Bytecode, entry: ScopeEntry) -> str:
@@ -7623,6 +7685,18 @@ def _method_slot_text(code: Bytecode, obj: Optional[Obj], name: str, *index: int
     key = ("arg", id(root), name, index[0]) if index else ("ret", id(root), name)
     slot = class_generics(code).slot_in(obj, key)
     return _scope_text(code, slot[0]) if slot is not None else None
+
+
+def _constraint_text(code: Bytecode, fields: "Optional[Dict[str, Tuple[tIndex, bool]]]") -> str:
+    """`:{ var name: Type; ... }`, the structural constraint of a type variable whose body uses typed
+    fields of it. A field only read is read-only, which also admits `String.length`."""
+    if not fields:
+        return ""
+    members = " ".join(
+        f"var {name}{'' if written else '(default, null)'}: {disasm._haxe_annotation(code, typ.resolve(code))};"
+        for name, (typ, written) in fields.items()
+    )
+    return f":{{ {members} }}"
 
 
 def _type_variable_name(number: int) -> str:

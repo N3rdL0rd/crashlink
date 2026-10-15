@@ -20,8 +20,9 @@ from typing import Dict, List, Optional, Tuple
 
 from .core import Bytecode, Fun, Function, Native, Obj, Opcode, Type, tIndex
 
-# Per function: its parameter variables, and the variable of its return (None if it doesn't return one).
-_Variables = Tuple[Dict[int, int], Optional[int]]
+# Per function: its parameter variables, the variable of its return (None if it doesn't return one),
+# and the fields each variable's constraint `T:{var field:Type}` names: field name -> (type index, written).
+_Variables = Tuple[Dict[int, int], Optional[int], Dict[int, Dict[str, Tuple[int, bool]]]]
 _cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[int, _Variables]]] = {}
 _lock = threading.Lock()
 
@@ -90,6 +91,38 @@ def _result_is_cast(caller: Function, op_index: int) -> bool:
     return following.op == "SafeCast" and following.df["src"].value == dst.value
 
 
+def _result_is_unsafely_cast(caller: Function, op_index: int) -> bool:
+    """True if the result of the call at `op_index` is cast without a check straight away: the
+    compiler's cast of the erased result of an instance method that returns a type variable."""
+    dst = caller.ops[op_index].df.get("dst")
+    if dst is None or op_index + 1 >= len(caller.ops):
+        return False
+    following = caller.ops[op_index + 1]
+    return following.op == "UnsafeCast" and following.df["src"].value == dst.value
+
+
+def _constrained_fields(
+    code: Bytecode, func: Function, params: List[int]
+) -> Dict[int, Dict[str, Tuple[int, bool]]]:
+    """The typed fields a body reads or writes on each of its Dynamic parameters. A field of a
+    `Dynamic` is itself Dynamic; one that has a type is declared by a structural constraint
+    (`T:{length:Int}`) on the parameter's type variable."""
+    fields: Dict[int, Dict[str, Tuple[int, bool]]] = {}
+    written = {op.df["dst"].value for op in func.ops if op.df.get("dst") is not None}
+    for op in func.ops:
+        if op.op == "DynGet":
+            reg, typ, stored = op.df["obj"].value, func.regs[op.df["dst"].value], False
+        elif op.op == "DynSet":
+            reg, typ, stored = op.df["obj"].value, func.regs[op.df["src"].value], True
+        else:
+            continue
+        if reg in params and reg not in written and typ.resolve(code).kind.value != Type.Kind.DYN.value:
+            name = op.df["field"].resolve(code)
+            known = fields.setdefault(reg, {}).get(name)
+            fields[reg][name] = (typ.value, stored or known is not None and known[1])
+    return fields
+
+
 def _compute(code: Bytecode) -> Dict[int, _Variables]:
     index = code.xref_index()
     dyn_kind = Type.Kind.DYN.value
@@ -100,10 +133,11 @@ def _compute(code: Bytecode) -> Dict[int, _Variables]:
         if not isinstance(signature, Fun) or code.partial_func_name(func) == "__constructor__":
             continue
         arrays = {i for i, a in enumerate(signature.args) if _array_name(code, a) == "hl.types.ArrayDyn"}
+        returns_dyn = signature.ret.resolve(code).kind.value == dyn_kind
         dyn_params = [
             i for i, a in enumerate(signature.args) if a.resolve(code).kind.value == dyn_kind or i in arrays
         ]
-        if not dyn_params:
+        if not dyn_params and not returns_dyn:
             continue
         parent = {i: i for i in dyn_params}
 
@@ -115,6 +149,7 @@ def _compute(code: Bytecode) -> Dict[int, _Variables]:
 
         evidenced: set = set()
         result_cast = False
+        free_cast = False
         returned = (
             _returned_parameter(func, dyn_params)
             if signature.ret.resolve(code).kind.value == dyn_kind
@@ -144,17 +179,30 @@ def _compute(code: Bytecode) -> Dict[int, _Variables]:
                     if reg_type(q) == reg_type(p):
                         parent[find(q)] = find(p)
             result_cast = result_cast or returned is not None and _result_is_cast(caller, ref.opcode_index)
+            free_cast = free_cast or returns_dyn and _result_is_unsafely_cast(caller, ref.opcode_index)
+        constrained = _constrained_fields(code, func, dyn_params)
+        evidenced.update(constrained)
         roots = {find(e) for e in evidenced}
         if result_cast and returned is not None:
             roots.add(find(returned))
-        if not roots:
+        if not roots and not free_cast:
             continue
         groups: Dict[int, int] = {}
         numbered = {}
         for p in dyn_params:
             if find(p) in roots:
                 numbered[p] = groups.setdefault(find(p), len(groups))
-        result[func.findex.value] = (numbered, numbered[returned] if returned in numbered else None)
+        if returned in numbered:
+            returned_variable: Optional[int] = numbered[returned]
+        elif free_cast and returned is None:
+            # A result no parameter carries, cast unchecked where the call is: a variable of its own.
+            returned_variable = len(groups)
+        else:
+            returned_variable = None
+        constraints: Dict[int, Dict[str, Tuple[int, bool]]] = {}
+        for p, named in constrained.items():
+            constraints.setdefault(numbered[p], {}).update(named)
+        result[func.findex.value] = (numbered, returned_variable, constraints)
     return result
 
 
@@ -165,7 +213,7 @@ def _variables(code: Bytecode, func: Function | Native) -> _Variables:
         if cached is None or cached[0]() is not code:
             cached = (weakref.ref(code), _compute(code))
             _cache[key] = cached
-    return cached[1].get(func.findex.value, ({}, None))
+    return cached[1].get(func.findex.value, ({}, None, {}))
 
 
 def type_variables(code: Bytecode, func: Function | Native) -> Dict[int, int]:
@@ -178,3 +226,11 @@ def return_variable(code: Bytecode, func: Function | Native) -> Optional[int]:
     """The number of the type variable `func` returns, when it returns one of its parameters
     unchanged: `function alias<T>(t:T):T` erases to a Dynamic return of its parameter."""
     return _variables(code, func)[1]
+
+
+def constraints(code: Bytecode, func: Function | Native) -> Dict[int, Dict[str, Tuple["tIndex", bool]]]:
+    """For each type variable of `func` that its body uses typed fields of, those fields: name -> (type, written)."""
+    return {
+        number: {name: (tIndex(typ), written) for name, (typ, written) in named.items()}
+        for number, named in _variables(code, func)[2].items()
+    }
