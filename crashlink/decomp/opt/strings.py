@@ -209,10 +209,14 @@ class IRStringIntConcatOptimizer(TraversingIROptimizer):
             return any(mentions(child) for child in node.get_children())
 
         def outside(node: IRStatement) -> bool:
-            if node is block:
+            """Whether code other than this block's own reads the register: a conversion folded away
+            reads nothing, and a plain write elsewhere (the next use of a shared register) observes nothing."""
+            if node is block or id(node) in ignorable:
                 return False
             if isinstance(node, IRBlock):
                 return any(outside(stmt) for stmt in node.statements)
+            if isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
+                return outside(node.expr)
             if isinstance(node, IRLocal):
                 return lifetime.aliases(node, local)
             if isinstance(node, IRUnliftedOpcode):

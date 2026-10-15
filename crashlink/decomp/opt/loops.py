@@ -8,7 +8,7 @@ import copy
 from typing import Dict, List, Optional, Set, Tuple, cast
 
 
-from ...core import tIndex
+from ...core import Function, Obj, tIndex
 from ..ir import (
     IRStatement,
     IRExpression,
@@ -697,6 +697,40 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
         val = _int_const_value(expr.right)
         return val == 1
 
+    def _length_of(self, expr: IRExpression) -> Optional[IRExpression]:
+        """The array whose length `expr` reads: `arr.length`, or `arr.get_length()` of an `Array<Dynamic>`."""
+        if isinstance(expr, IRField) and expr.field_name == "length":
+            return expr.target
+        if (
+            isinstance(expr, IRCall)
+            and expr.call_type == IRCall.CallType.FUNC
+            and isinstance(expr.target, IRConst)
+            and isinstance(expr.target.value, Function)
+            and len(expr.args) == 1
+            and self.func.code.full_func_name(expr.target.value) == "hl.types.ArrayDyn.get_length"
+        ):
+            return expr.args[0]
+        return None
+
+    def _is_array_dyn(self, expr: IRExpression) -> bool:
+        definition = expr.get_type().definition
+        return isinstance(definition, Obj) and definition.name.resolve(self.func.code) == "hl.types.ArrayDyn"
+
+    def _element_read(self, expr: IRExpression) -> Optional[Tuple[IRExpression, IRExpression]]:
+        """`(array, index)` of `arr[index]`, or of `arr.getDyn(index)` on an `Array<Dynamic>`."""
+        if isinstance(expr, IRArrayAccess):
+            return expr.array, expr.index
+        if (
+            isinstance(expr, IRCall)
+            and expr.call_type == IRCall.CallType.METHOD
+            and isinstance(expr.target, IRField)
+            and expr.target.field_name == "getDyn"
+            and len(expr.args) == 1
+            and self._is_array_dyn(expr.target.target)
+        ):
+            return expr.target.target, expr.args[0]
+        return None
+
     def _try_convert(self, loop: IRWhileLoop) -> Optional[Tuple[IRForEachLoop, IRLocal]]:
         cond = loop.condition
         if not isinstance(cond, IRBoolExpr):
@@ -704,21 +738,13 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
         idx: Optional[IRLocal] = None
         arr: Optional[IRExpression] = None
         if cond.op == IRBoolExpr.CompareType.LT:
-            if (
-                isinstance(cond.left, IRLocal)
-                and isinstance(cond.right, IRField)
-                and cond.right.field_name == "length"
-            ):
-                idx = cond.left
-                arr = cond.right.target
+            if isinstance(cond.left, IRLocal) and cond.right is not None:
+                arr = self._length_of(cond.right)
+                idx = cond.left if arr is not None else None
         elif cond.op == IRBoolExpr.CompareType.GT:
-            if (
-                isinstance(cond.right, IRLocal)
-                and isinstance(cond.left, IRField)
-                and cond.left.field_name == "length"
-            ):
-                idx = cond.right
-                arr = cond.left.target
+            if isinstance(cond.right, IRLocal) and cond.left is not None:
+                arr = self._length_of(cond.left)
+                idx = cond.right if arr is not None else None
         if idx is None or arr is None:
             return None
         if self._is_user_local(idx):
@@ -758,9 +784,8 @@ class IRForEachLoopOptimizer(TraversingIROptimizer):
 
         if not isinstance(access_stmt, IRAssign) or not isinstance(access_stmt.target, IRLocal):
             return None
-        if not isinstance(access_stmt.expr, IRArrayAccess):
-            return None
-        if access_stmt.expr.array != arr or access_stmt.expr.index != access_index:
+        read = self._element_read(access_stmt.expr) if isinstance(access_stmt.expr, IRExpression) else None
+        if read is None or read[0] != arr or read[1] != access_index:
             return None
         elem = access_stmt.target
         discarded.append(access_stmt)
@@ -958,6 +983,12 @@ class IRIntRangeLoopOptimizer(TraversingIROptimizer):
         if idx is None or end_expr is None:
             return None
         if self._is_user_local(idx):
+            return None
+        # A range's bound is evaluated once, before the loop. A condition that reads it (a field, a call,
+        # its null check) on every iteration came from a `while`, or from `for (x in array)`.
+        ops = self.func.func.ops
+        header = [ops[i].op or "" for i in loop.src_op_idxs if i < len(ops)]
+        if any(name in ("Field", "NullCheck", "ArraySize") or name.startswith("Call") for name in header):
             return None
         body = loop.body
         if len(body.statements) < 2:

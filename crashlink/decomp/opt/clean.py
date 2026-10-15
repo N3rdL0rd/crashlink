@@ -1256,6 +1256,9 @@ class IRArrayGrowGuardEliminator(TraversingIROptimizer):
                     and isinstance(true_stmts[0].target, IRConst)
                     and isinstance(true_stmts[0].target.value, Function)
                     and self.func.code.partial_func_name(true_stmts[0].target.value) == "__expand"
+                    # Only the array implementation's own `__expand` is a compiler guard: another
+                    # class's (`BytesBuffer`) is an inline method's real source.
+                    and self.func.code.full_func_name(true_stmts[0].target.value).startswith("hl.types.Array")
                     # Keep the guard when __expand is called on `this`: that's the
                     # array impl class's own setDyn body (real source), not a
                     # compiler-inserted guard fronting a user's `arr[i] = v`.
@@ -2966,6 +2969,11 @@ class IRDeadTempEliminator(_ReferenceAwareOptimizer):
                 # `_has_observable_effects` only flags it because a checked
                 # downcast can throw — so a dead one is dropped outright.
                 if _has_observable_effects(stmt.expr) and not _is_pure_numeric_cast_tree(stmt.expr):
+                    if isinstance(stmt.expr, (IRField, IRArrayAccess)):
+                        # A bare `o.f;` or `a[i];` is dropped by the compiler, and its null check with
+                        # it: the read stays, into a variable nothing uses.
+                        new_stmts.append(stmt)
+                        continue
                     stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
                     new_stmts.append(stmt.expr)
                 continue
@@ -3426,9 +3434,12 @@ class IRDeadAssignmentEliminator(_ReferenceAwareOptimizer):
                     # round-trip stays faithful to the original bytecode.
                     new_stmts.append(stmt)
                 elif _has_observable_effects(stmt.expr):
-                    # Keep the side effects as a bare expression statement.
-                    stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
-                    new_stmts.append(stmt.expr)
+                    if isinstance(stmt.expr, (IRField, IRArrayAccess)):
+                        new_stmts.append(stmt)  # a bare `o.f;` is dropped by the compiler, null check and all
+                    else:
+                        # Keep the side effects as a bare expression statement.
+                        stmt.expr.adopt(stmt)  # opcode was tagged on the assign, not its expr
+                        new_stmts.append(stmt.expr)
                 # else: drop the dead assignment entirely for compiler temps.
                 # For kept statements, still update liveness; dropped ones don't.
                 live.difference_update(defs)
