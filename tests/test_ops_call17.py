@@ -136,3 +136,20 @@ class Main {
     assert ": Float)" in text
     assert _same(original, recompiled, "$Main.test")
 
+
+def test_static_read_through_a_dynamic_class_reference_stays_dynamic(tmp_path: Path) -> None:
+    source = """
+class Main {
+    @:native("nativeVar") static var myVar = "bar";
+    static function show(a:Dynamic) { Sys.println(a); }
+    static function test() {
+        show(Main.myVar);
+        var d:Dynamic = Main;
+        show(d.nativeVar);
+    }
+    static function main() { test(); }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert ": Dynamic).nativeVar" in text
+    assert _same(original, recompiled, "$Main.test")

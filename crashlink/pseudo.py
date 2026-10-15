@@ -1485,6 +1485,10 @@ def _expression_to_haxe(
             )
             target_str = f"(cast {target_str} : {annotation})"
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
+            if expr.dynamic:
+                # `var d:Dynamic = Cls; d.field`: the class object read through Dynamic.
+                class_name = _static_owner_path(code, target_type.definition, type_name, ir_function)
+                return f"({class_name} : Dynamic).{expr.field_name}"
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
             return _std_private_access(
