@@ -224,3 +224,29 @@ class Main {
     assert ".bind(" not in files["src/Main.hx"]
     assert expected == actual
     assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_nested_constructor_pattern_is_a_switch_case(tmp_path: Path) -> None:
+    # `case B(A)` tests the outer constructor, then the one it holds, in a single condition.
+    source = """
+enum Kind {
+    A;
+    B(child:Kind);
+}
+
+class Main {
+    static function main() {
+        var e = B(A);
+        switch (e) {
+            case B(A):
+                Sys.println("ba");
+            case _:
+                Sys.println("other");
+        }
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "Type.enumParameters" not in files["src/Main.hx"]
+    assert expected == actual
+    assert _same_signature(original, recompiled, "Main.main")

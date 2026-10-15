@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     pass
 
 from ...core import (
+    Bytecode,
     Enum,
     Fun,
 )
@@ -133,6 +134,95 @@ class IRIntSwitchOptimizer(TraversingIROptimizer):
         return IRSwitch(self.func.code, local, cases, default).adopt(*chain)
 
 
+def conjuncts(expr: IRExpression) -> List[IRExpression]:
+    """The operands of a chain of `&&`, in evaluation order."""
+    if isinstance(expr, IRBoolExpr) and expr.op == IRBoolExpr.CompareType.AND:
+        assert expr.left is not None and expr.right is not None
+        return conjuncts(expr.left) + conjuncts(expr.right)
+    return [expr]
+
+
+def parse_enum_match(
+    parts: List[IRExpression], code: Bytecode
+) -> Optional[Tuple[IRLocal, IREnumPattern, int]]:
+    """The constructor pattern a leading run of `parts` tests: `enumIndex(e) == K`, then payload
+    comparisons with constants and nested constructor tests (`enumIndex(e.param1) == J`) in the
+    order the pattern matcher emits them, all reading the payloads straight from the value.
+    Returns the matched local, the pattern (literals as IRConst slots) and how many parts it took."""
+
+    def sides(part: IRExpression) -> Optional[Tuple[IRExpression, IRConst]]:
+        if not (isinstance(part, IRBoolExpr) and part.op == IRBoolExpr.CompareType.EQ):
+            return None
+        if isinstance(part.right, IRConst):
+            return cast(IRExpression, part.left), part.right
+        if isinstance(part.left, IRConst) and part.right is not None:
+            return part.right, part.left
+        return None
+
+    def path(node: IRExpression) -> Optional[Tuple[object, ...]]:
+        if isinstance(node, IRLocal):
+            return ("local", node.name)
+        if isinstance(node, IREnumField) and node.field_name.startswith("param"):
+            parent = path(node.value)
+            return None if parent is None else (*parent, int(node.field_name.removeprefix("param")))
+        return None
+
+    head = sides(parts[0])
+    if head is None or not isinstance(head[0], IREnumIndex):
+        return None
+    value, index = head[0].value, _int_const_value(head[1])
+    enum_def = value.get_type().definition
+    if not isinstance(value, IRLocal) or not isinstance(enum_def, Enum) or index is None:
+        return None
+    if not 0 <= index < len(enum_def.constructs):
+        return None
+    root = IREnumPattern(code, value.type, index)
+    nodes: Dict[Tuple[object, ...], IREnumPattern] = {("local", value.name): root}
+    used = 1
+    for part in parts[1:]:
+        pair = sides(part)
+        if pair is None:
+            break
+        read, const = pair
+        if isinstance(read, IREnumIndex):
+            # A nested constructor test: the payload read here is the next pattern.
+            nested = read.value
+            key = path(nested)
+            nested_def = nested.get_type().definition
+            nested_index = _int_const_value(const)
+            if not (
+                isinstance(nested, IREnumField)
+                and key is not None
+                and isinstance(nested_def, Enum)
+                and nested_index is not None
+                and 0 <= nested_index < len(nested_def.constructs)
+                and key[:-1] in nodes
+                and nested.constructor_index == nodes[key[:-1]].constructor_index
+                and key[-1] not in nodes[key[:-1]].slots
+            ):
+                break
+            child = IREnumPattern(code, nested.field_type_idx, nested_index)
+            nodes[key[:-1]].slots[cast(int, key[-1])] = child
+            nodes[key] = child
+            used += 1
+            continue
+        if isinstance(read, IRCast):
+            read = read.expr
+        key = path(read)
+        if not (
+            isinstance(read, IREnumField)
+            and key is not None
+            and key[:-1] in nodes
+            and read.constructor_index == nodes[key[:-1]].constructor_index
+            and key[-1] not in nodes[key[:-1]].slots
+            and const.const_type in (IRConst.ConstType.INT, IRConst.ConstType.FLOAT, IRConst.ConstType.STRING)
+        ):
+            break
+        nodes[key[:-1]].slots[cast(int, key[-1])] = const
+        used += 1
+    return (value, root, used) if used > 1 or len(parts) == 1 else None
+
+
 def _enum_read(node: IRStatement) -> Optional[IREnumField]:
     """The enum field a statement reads: `e.paramN`, or `dst = e.paramN` / `dst = cast(e.paramN)`."""
     expr = node
@@ -181,6 +271,8 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 if match is None:
                     match = self._try_enum_switch(block.statements, i)
                 if match is None:
+                    match = self._try_conjunction_switch(block.statements, i)
+                if match is None:
                     match = self._try_singleton_region(block.statements, i)
                 if match:
                     switch_stmt, consumed = match
@@ -191,6 +283,31 @@ class IREnumSwitchOptimizer(TraversingIROptimizer):
                 new_statements.append(stmt)
                 i += 1
             block.statements = new_statements
+
+    def _try_conjunction_switch(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRSwitch, int]]:
+        """`if (idx(e) == K && e.p0 == c && idx(e.p1) == J) A else B` is the one-case switch it was
+        compiled from: `switch (e) { case K(c, J): A; default: B }`."""
+        stmt = stmts[start]
+        if not (isinstance(stmt, IRConditional) and isinstance(stmt.condition, IRBoolExpr)):
+            return None
+        parts = conjuncts(stmt.condition)
+        parsed = parse_enum_match(parts, self.func.code)
+        if parsed is None or len(parts) < 2 or parsed[2] != len(parts):
+            return None
+        value, root, _ = parsed
+        body = stmt.true_block
+        if not self._literal_patterns(body, stmt.false_block, value, root):
+            self._bind_expression_reads(body, value, root)
+        key = IRConst(
+            self.func.code,
+            IRConst.ConstType.GLOBAL_STRING,
+            value=cast(Enum, value.get_type().definition)
+            .constructs[root.constructor_index]
+            .name.resolve(self.func.code),
+        )
+        switch = IRSwitch(self.func.code, value, {key: body}, stmt.false_block).adopt(stmt)
+        switch.enum_patterns[key] = root
+        return switch, 1
 
     def _try_enum_switch(self, stmts: List[IRStatement], start: int) -> Optional[Tuple[IRSwitch, int]]:
         if start >= len(stmts):
