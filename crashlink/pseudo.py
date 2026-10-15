@@ -3729,7 +3729,13 @@ def _collapse_adapter_guards(ir_func: IRFunction) -> None:
             target = call_branch.target
             if not (isinstance(target, IRLocal) and idx + 1 < len(block.statements)):
                 continue
-            if _count_local_reads_and_writes(ir_func.block, target.name) != (1, 2):
+            mentions = sum(
+                1
+                for node in _walk_ir(ir_func.block)
+                if isinstance(node, IRLocal) and node.name == target.name
+            )
+            # Two writes (the guard's branches) and the one read in the next statement, nothing else.
+            if mentions != 3 or _count_local_reads_and_writes(ir_func.block, target.name) != (1, 2):
                 continue
             if IRTempAssignmentInliner(ir_func)._substitute_in_statement(
                 block.statements[idx + 1], target, call_branch.expr
