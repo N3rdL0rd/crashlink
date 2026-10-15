@@ -270,3 +270,16 @@ class Main {
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
     assert expected == actual
     assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_nested_curried_lambda_does_not_hide_the_enclosing_context(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function main() {
+        var f:(Int)->((Int)->((Int)->Int)) = a -> b -> c -> a + b + c;
+        Sys.println(f(1)(2)(3));
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert expected == actual

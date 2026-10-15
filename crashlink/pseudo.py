@@ -3763,7 +3763,8 @@ def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: Li
 def _parameters_shadow(params: List[str], captured: List[IRExpression]) -> bool:
     """Whether a lambda's own parameter has the name of a captured variable. The body names both
     the same way, so the two can no longer be told apart."""
-    names = {c.name for c in captured if isinstance(c, IRLocal)}
+    # A capture can be a read of a local (the enclosing closure's own context) as well as a local.
+    names = {n.name for c in captured for n in _walk_ir(c) if isinstance(n, IRLocal)}
     return bool(names & {p.lstrip("?").split(" = ")[0].split(":")[0].strip() for p in params[1:]})
 
 
