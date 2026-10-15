@@ -4454,6 +4454,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     for name in unused_static_aliases:
         local_types.pop(name, None)
     _tag_map_allocations(ir_func.block, code, func_core.findex.value, ir_func.all_locals)
+    literal_arrays = _literal_array_types(ir_func.block, code)
     interfaces: Dict[str, Set[Optional[str]]] = {}
     map_values: Dict[str, Optional[str]] = {}
     defs_of_web: Dict[int, List[int]] = {}
@@ -4467,6 +4468,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             local_types[local.name] = arrayelems.refine(
                 local_types[local.name], arrayelems.element_type(code, func_core, local.reg_idx)
             )
+            if local.name in literal_arrays:
+                local_types[local.name] = arrayelems.refine(
+                    local_types[local.name], literal_arrays[local.name][len("Array<") : -1]
+                )
             regs = func_core.regs
             if local.reg_idx >= len(regs) or regs[local.reg_idx].resolve(code) is not local.get_type():
                 interfaces.setdefault(local.name, set()).add(None)
@@ -7606,6 +7611,29 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
             visit(child)
 
     visit(root)
+
+
+def _literal_array_types(root: IRStatement, code: Bytecode) -> Dict[str, str]:
+    """The `Array<T>` the array literal a local is assigned names, by local name (only where all agree)."""
+    seen: Set[int] = set()
+    found: Dict[str, Set[str]] = {}
+
+    def visit(stmt: IRStatement) -> None:
+        if id(stmt) in seen:
+            return
+        seen.add(id(stmt))
+        if (
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRArrayLiteral)
+        ):
+            annotation = _literal_type_annotation(stmt.expr, code)
+            found.setdefault(stmt.target.name, set()).add(annotation or "")
+        for child in stmt.get_children():
+            visit(child)
+
+    visit(root)
+    return {name: next(iter(types)) for name, types in found.items() if len(types) == 1 and "" not in types}
 
 
 def _scope_text(code: Bytecode, entry: ScopeEntry) -> str:

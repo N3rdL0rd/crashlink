@@ -20,7 +20,7 @@ import threading
 import weakref
 from typing import Dict, List, Optional, Set, Tuple
 
-from .core import Bytecode, Function, Obj, Type
+from .core import Bytecode, Function, Obj, Opcode, Type
 
 _cache: Dict[int, Tuple["weakref.ReferenceType[Bytecode]", Dict[Tuple[int, int], str]]] = {}
 _lock = threading.Lock()
@@ -46,6 +46,23 @@ def _field_name(code: Bytecode, obj: Obj, flat: int) -> Optional[str]:
     return None
 
 
+_CAST_OR_COPY = {"Mov", "SafeCast", "UnsafeCast"}
+
+
+def _from_std_array_code(code: Bytecode, op: Opcode) -> bool:
+    """True if `op` makes an array by the std's own code (`hl.types`, or its unnamed wrappers), which
+    returns the element type its caller names, rather than reading one a declaration fixed."""
+    if op.op in ("New", "Null", "Type"):
+        return True
+    if not op.op.startswith("Call") or "fun" not in op.df:
+        return False
+    callee = code.fn(op.df["fun"].value)
+    if not isinstance(callee, Function):
+        return True
+    name = code.full_func_name(callee)
+    return name.startswith("hl.types.") or name == "<none>"
+
+
 def _compute(code: Bytecode) -> Dict[Tuple[int, int], str]:
     from . import disasm
 
@@ -69,9 +86,16 @@ def _compute(code: Bytecode) -> Dict[Tuple[int, int], str]:
         evidence: Dict[int, Set[str]] = {}
         nested: List[Tuple[int, int]] = []
         backing: Dict[int, int] = {}
+        poisoned: Set[int] = set()
         ops = func.ops
         for index, op in enumerate(ops):
             name, df = op.op, op.df
+            written = df.get("dst")
+            if written is not None and regs[written.value] in array_types and name not in _CAST_OR_COPY:
+                # A value read off a field, a global or a user function has the type that declares
+                # it, which names no element type: a declaration naming one would not accept it.
+                if not _from_std_array_code(code, op):
+                    poisoned.add(written.value)
             if name == "Mov":
                 if regs[df["dst"].value] in array_types and regs[df["src"].value] in array_types:
                     parent[find(df["dst"].value)] = find(df["src"].value)
@@ -103,6 +127,7 @@ def _compute(code: Bytecode) -> Dict[Tuple[int, int], str]:
             return solved
 
         solved = solve()
+        unrefinable = {find(reg) for reg in poisoned}
         for _ in range(3):
             for outer, inner in nested:
                 names = solved.get(find(inner))
@@ -111,7 +136,12 @@ def _compute(code: Bytecode) -> Dict[Tuple[int, int], str]:
             solved = solve()
         for reg in list(parent):
             names_here: Optional[Set[str]] = solved.get(find(reg))
-            if names_here is not None and len(names_here) == 1 and regs[reg] in array_types:
+            if (
+                names_here is not None
+                and len(names_here) == 1
+                and regs[reg] in array_types
+                and find(reg) not in unrefinable
+            ):
                 result[(func.findex.value, reg)] = next(iter(names_here))
     return result
 
