@@ -27,6 +27,7 @@ from .core import (
     destaticify,
     is_static_name,
     gIndex,
+    tIndex,
     Virtual,
     Dyn,
     Null,
@@ -4410,10 +4411,11 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
 
     params_joined_str = ", ".join(params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
+    constraints = generics.constraints(code, func_core) if variables else {}
     type_params = (
         "<"
         + ", ".join(
-            _type_variable_name(n + variable_offset)
+            _type_variable_name(n + variable_offset) + _constraint_text(code, constraints.get(n))
             for n in sorted(
                 {*variables.values(), *([] if returned_variable is None else [returned_variable])}
             )
@@ -7626,6 +7628,18 @@ def _method_slot_text(code: Bytecode, obj: Optional[Obj], name: str, *index: int
     key = ("arg", id(root), name, index[0]) if index else ("ret", id(root), name)
     slot = class_generics(code).slot_in(obj, key)
     return _scope_text(code, slot[0]) if slot is not None else None
+
+
+def _constraint_text(code: Bytecode, fields: "Optional[Dict[str, Tuple[tIndex, bool]]]") -> str:
+    """`:{ var name: Type; ... }`, the structural constraint of a type variable whose body uses typed
+    fields of it. A field only read is read-only, which also admits `String.length`."""
+    if not fields:
+        return ""
+    members = " ".join(
+        f"var {name}{'' if written else '(default, null)'}: {disasm._haxe_annotation(code, typ.resolve(code))};"
+        for name, (typ, written) in fields.items()
+    )
+    return f":{{ {members} }}"
 
 
 def _type_variable_name(number: int) -> str:

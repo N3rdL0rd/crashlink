@@ -260,3 +260,32 @@ class Main {
 }
 """
     _check(tmp_path, source, "Main.main")
+
+
+def test_type_variable_constrained_by_the_typed_fields_its_body_uses(tmp_path: Path) -> None:
+    # A field of a constrained `T` has the constraint's type, so its read and write are typed; the
+    # same fields on a `Dynamic` would be Dynamic.
+    source = """
+typedef Measurable = {
+    public var length(default, null):Int;
+}
+
+class Main {
+    static function decrease<T:{iterator:Int}>(v:T) {
+        v.iterator--;
+        --v.iterator;
+    }
+
+    static function measure<T:Measurable>(t:T) {
+        return t.length;
+    }
+
+    static function main() {
+        var value = {iterator: 10};
+        decrease(value);
+        Sys.println(value.iterator);
+        Sys.println(measure("foo"));
+    }
+}
+"""
+    _check(tmp_path, source, "Main.decrease", "Main.measure", "Main.main")
