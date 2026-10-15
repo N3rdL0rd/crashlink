@@ -100,3 +100,82 @@ class Main {
     text = _check(tmp_path, source, "Main.main", "Main.register")
     assert "Array<((Int) -> Int)>" in text
     assert "trace(Main.handlers[0](5))" in text
+
+
+def test_float_concat_arms_sharing_a_length_cell_fold_back_to_concatenation(tmp_path: Path) -> None:
+    # Every `"x" + float` conversion writes its length into one register, which the arms also reuse for
+    # the trace's line number: the conversions of the other arms are not readers of the cell.
+    source = """
+enum Shape {
+    None;
+    Circle(r:Float);
+    Rect(w:Float, h:Float);
+}
+
+class Main {
+    static function main() {
+        var a = None;
+        var b = None;
+        trace(a == b);
+        var c = Circle(1.0);
+        switch (a) {
+            case None: trace("none");
+            case Circle(r): trace("circle " + r);
+            case Rect(w, h): trace("rect " + w + " " + h);
+        }
+        switch (c) {
+            case None: trace("none2");
+            case Circle(r): trace("circle2 " + r);
+            case Rect(w, h): trace("rect2 " + w + " " + h);
+        }
+    }
+}
+"""
+    # The cell also leaks the trace line numbers into the function's behaviour: compare the output only.
+    text = _check(tmp_path, source)
+    assert "__alloc__" not in text
+
+
+def test_bytes_buffer_growth_guard_is_kept(tmp_path: Path) -> None:
+    # `BytesBuffer.__expand` is the inline method's own source, not the array guard HL puts before a bracket write.
+    source = """
+class Main {
+    static function main() {
+        var buf = new haxe.io.BytesBuffer();
+        buf.addDouble(9007199254740991.0);
+        Sys.println(buf.getBytes().length);
+    }
+}
+"""
+    _check(tmp_path, source, "Main.main")
+
+
+def test_unused_field_read_keeps_its_null_check(tmp_path: Path) -> None:
+    # `field++` through an inline abstract operator reads the field and drops the value; a bare
+    # `this.field;` statement would not compile back to the read.
+    source = """
+private abstract MyInt(Int) from Int to Int {
+    @:op(A++)
+    public inline function increment():MyInt {
+        Main.count++;
+        return this;
+    }
+}
+
+class Main {
+    public static var count = 0;
+    final field:MyInt = 1;
+
+    public function new() {}
+
+    function t():Void {
+        field++;
+        Sys.println(count);
+    }
+
+    static function main() {
+        new Main().t();
+    }
+}
+"""
+    _check(tmp_path, source, "Main.t")

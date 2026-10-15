@@ -2005,13 +2005,24 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return False
         # A value computed from a local this block also writes (a loop counter and its increment) is
         # a snapshot: moving it past the write needs the compensation that counted-loop recovery
-        # does not expect. A write that comes before the definition is harmless: the value was read after it.
+        # does not expect. A plain write before the definition (`s = f(); t = s.g()`) is harmless: the
+        # value was read after it. A block that updates a counter (`i = i + 1`) keeps the strict rule:
+        # its temps are the snapshots counted-loop recovery works from.
         read_names = self._collect_free_locals(define.expr)
-        for stmt in statements[def_index + 1 :]:
+        counts = any(
+            isinstance(stmt, IRAssign)
+            and isinstance(stmt.target, IRLocal)
+            and isinstance(stmt.expr, IRArithmetic)
+            and stmt.expr.left == stmt.target
+            and isinstance(stmt.expr.right, IRConst)
+            for stmt in statements
+        )
+        for position, stmt in enumerate(statements):
             if (
                 isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
                 and stmt.target.name in read_names
+                and (position > def_index or counts)
             ):
                 return False
         if not lifetime.dead_in(statements[def_index + 2 :], temp):
