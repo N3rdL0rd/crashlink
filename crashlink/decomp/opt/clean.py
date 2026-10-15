@@ -941,6 +941,15 @@ class IRTernaryRecovery(TraversingIROptimizer):
                 return None
             if not (self._safe_arm(in_branch.value) and self._safe_arm(fallthrough.value)):
                 return None
+            # `return c` materialises its bool through a joined register; two
+            # direct `return true` / `return false` arms are `if (c) return true;
+            # return false;` in the source, and a recompile of `return c` would
+            # change the CFG.
+            if (
+                self._bool_const(in_branch.value) is not None
+                and self._bool_const(fallthrough.value) is not None
+            ):
+                return None
             expr = self._make_ternary(
                 cond_stmt.condition, in_branch.value, fallthrough.value, self._type_index(in_branch.value)
             )
@@ -1177,6 +1186,11 @@ class IRTernaryRecovery(TraversingIROptimizer):
             return None
         if not ((t_checked or self._safe_arm(t.expr)) and (f_checked or self._safe_arm(f.expr))):
             return None
+        # `c ? a : b` writes one temp in its arms and copies it into the variable once
+        # after the join; `if (c) { x = a; } else { x = b; }` copies in each arm, so
+        # a ternary would add a join block the original did not have.
+        if not (t_checked or f_checked) and self._copies_into(t, t.target) and self._copies_into(f, t.target):
+            return None
         # The shared target's declared type is the ternary's result type.
         expr = self._make_ternary(stmt.condition, t.expr, f.expr, t.target.type)
         out = IRAssign(self.func.code, t.target, expr)
@@ -1184,6 +1198,15 @@ class IRTernaryRecovery(TraversingIROptimizer):
         # let constants fold into the ternary's condition.
         out._no_user_inline = True
         return out
+
+    def _copies_into(self, assign: IRAssign, target: IRLocal) -> bool:
+        """Whether `assign` came from a `Mov` into `target`'s register (a named variable
+        written from a temp), as opposed to computing straight into it."""
+        ops = self.func.ops
+        return any(
+            0 <= idx < len(ops) and ops[idx].op == "Mov" and ops[idx].df["dst"].value == target.reg_idx
+            for idx in assign.src_op_idxs
+        )
 
     def _type_index(self, expr: IRExpression) -> "tIndex":
         """Resolve an expression's type back to its tIndex (identity search over
@@ -4215,6 +4238,29 @@ class IRShiftConstantOptimizer(TraversingIROptimizer):
                     const_map[target_local] = stmt.expr
 
 
+def _origin_ops(stmts: List[IRStatement]) -> Set[int]:
+    ops: Set[int] = set()
+    stack: List[IRStatement] = list(stmts)
+    while stack:
+        node = stack.pop()
+        ops |= node.src_op_idxs
+        stack.extend(child for child in node.get_children() if child is not node)
+    return ops
+
+
+def _same_arm(a: List[IRStatement], b: List[IRStatement]) -> bool:
+    """Two arms that read the same and come from the same bytecode.
+
+    Merging `if (A) { T } else if (B) { T }` into `A || B` is right when `T` is one jump target
+    the structurer reached twice (identical source opcodes). Two copies of `T` in the bytecode
+    (`T` written out under each test, as Haxe's pattern matcher does for a default) are separate
+    blocks, and one `||` would join them on recompile."""
+    if not _stmt_lists_structurally_equal(a, b):
+        return False
+    ops_a, ops_b = _origin_ops(a), _origin_ops(b)
+    return not ops_a or not ops_b or ops_a == ops_b
+
+
 class IRGuardOrMerger(TraversingIROptimizer):
     """Merge `if (A) { T } else { if (B) { T } else { W } } }` into a single
     `if (A || B) { T } else { W }` when both `T` branches perform the exact
@@ -4284,7 +4330,7 @@ class IRGuardOrMerger(TraversingIROptimizer):
         inner = false_stmts[0]
         if not isinstance(inner, IRConditional):
             return None
-        if _stmt_lists_structurally_equal(outer_true, inner.true_block.statements):
+        if _same_arm(outer_true, inner.true_block.statements):
             or_cond = IRBoolExpr(
                 self.func.code,
                 IRBoolExpr.CompareType.OR,
@@ -4322,7 +4368,7 @@ class IRGuardOrMerger(TraversingIROptimizer):
         if resolved is None:
             return None
         inner, rhs_cond, temp_assign = resolved
-        if _stmt_lists_structurally_equal(false_stmts, inner.true_block.statements):
+        if _same_arm(false_stmts, inner.true_block.statements):
             not_a = self._invert(stmt.condition)
             or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, rhs_cond)
             merged = IRConditional(self.func.code, or_cond, inner.true_block, inner.false_block)
@@ -4420,7 +4466,7 @@ class IRGuardOrMerger(TraversingIROptimizer):
         inner = outer_true[0]
         if not isinstance(inner, IRConditional) or not inner.false_block.statements:
             return None
-        if _stmt_lists_structurally_equal(false_stmts, inner.false_block.statements):
+        if _same_arm(false_stmts, inner.false_block.statements):
             and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
             merged = IRConditional(self.func.code, and_cond, inner.true_block, inner.false_block)
             merged.adopt(stmt, inner)
@@ -4491,7 +4537,7 @@ class IRGuardOrMerger(TraversingIROptimizer):
         inner_true = inner.true_block.statements
         if not inner_true or len(following) < len(inner_true):
             return None
-        if not _stmt_lists_structurally_equal(inner_true, following[: len(inner_true)]):
+        if not _same_arm(inner_true, following[: len(inner_true)]):
             return None
         not_a = self._invert(stmt.condition)
         or_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.OR, not_a, inner.condition)
@@ -4545,7 +4591,7 @@ class IRGuardOrMerger(TraversingIROptimizer):
             return None
         if not wanted or len(following) < len(wanted):
             return None
-        if not _stmt_lists_structurally_equal(wanted, following[: len(wanted)]):
+        if not _same_arm(wanted, following[: len(wanted)]):
             return None
         and_cond = IRBoolExpr(self.func.code, IRBoolExpr.CompareType.AND, stmt.condition, inner.condition)
         merged = IRConditional(self.func.code, and_cond, inner.true_block, false_block)
