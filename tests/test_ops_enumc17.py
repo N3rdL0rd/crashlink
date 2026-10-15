@@ -169,3 +169,36 @@ class Main {
     assert ".bind(" not in files["src/Main.hx"]
     assert expected == actual
     assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_bind_of_a_method_stays_a_bind(tmp_path: Path) -> None:
+    # `c.process.bind(42)` travels the receiver and the value in one capture context; spelled
+    # `.bind(Ctx(...))` of a lifted helper it builds another context type.
+    source = """
+class C {
+    public function new() {}
+
+    public function process(value:Int):Int {
+        return value;
+    }
+}
+
+class Main {
+    static var timestamp = 1.0;
+
+    static function main() {
+        var c = new C();
+        var c2 = new C();
+        var f = c.process.bind(42);
+        c = null;
+        Sys.println(f());
+        timestamp = 2.0;
+        var g = c2.process.bind(Std.int(timestamp));
+        Sys.println(g());
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "__ClosureCtx" not in files["src/Main.hx"]
+    assert expected == actual
+    assert _same_signature(original, recompiled, "Main.main")

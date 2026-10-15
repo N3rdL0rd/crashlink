@@ -1550,6 +1550,9 @@ def _expression_to_haxe(
         block = _inline_block_closure(expr, obj_str, len(extra_args), code, ir_function)
         if block is not None:
             return block
+        context_bind = _context_bind(expr, code, ir_function)
+        if context_bind is not None:
+            return context_bind
         forwarded = _forwarded_bind(expr, obj_str, code, ir_function)
         if forwarded is not None:
             # `Type.method.bind(a, _)`: the compiler wraps the function in a helper that only calls it.
@@ -3512,6 +3515,76 @@ def _walk_ir(node: Optional[IRStatement]) -> Iterator[IRStatement]:
     else:
         for child in node.get_children():
             yield from _walk_ir(child)
+
+
+_CTX_REF = re.compile(_CTX_MARK + r"(\d+)" + _CTX_MARK)
+
+
+def _context_bind(expr: "IRBoundClosure", code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+    """`f.bind(a, _)` for a closure over a capture context whose body only calls what the context
+    holds with what it holds and its own parameters.
+
+    `f.bind(args)` evaluates the arguments into variables and calls `f` inside a closure over
+    them, so all of them (and the receiver of a method value) travel in one context. The helper's
+    body is `<ctx 1>.process(<ctx 0>)` or `<ctx 0>(<ctx 1>, x)`; the bound values come out in the
+    order of the call, `_` stands for each parameter of the closure."""
+    entry = getattr(ir_function, "_ctx_closure_bodies", {}).get(expr.fun.findex.value)
+    context = expr.obj
+    if entry is None or not isinstance(context, IREnumConstruct) or expr.captures is not None:
+        return None
+    enum_def = context.get_type().definition
+    if not (isinstance(enum_def, Enum) and enum_def.name.value == 0):
+        return None
+    # The arguments are evaluated before the closure is made and, in source, in call order: values
+    # whose evaluation could be told apart from that order are not rebound.
+    impure = [a for a in context.args if not isinstance(a, (IRLocal, IRConst))]
+    if len(impure) > 1:
+        return None
+    params, body = entry
+    if "\n" in body or '"' in body or "'" in body or not body.endswith(")"):
+        return None
+    depth = 0
+    for at in range(len(body) - 1, -1, -1):
+        depth += {")": 1, "(": -1}.get(body[at], 0)
+        if depth == 0:
+            break
+    callee, inner = body[:at], body[at + 1 : -1]
+    if not re.fullmatch(r"[\w.$\x00]+", callee) or depth != 0:
+        return None
+    arguments = [part.strip() for part in _split_params(inner)] if inner.strip() else []
+    captured = [_expression_to_haxe(a, code, ir_function) for a in context.args]
+    used: List[int] = []
+    unbound = iter(params[1:])
+    slots: List[str] = []
+    for argument in arguments:
+        reference = _CTX_REF.fullmatch(argument)
+        if reference is not None:
+            used.append(int(reference.group(1)))
+            slots.append(captured[used[-1]] if used[-1] < len(captured) else "")
+        elif argument == next(unbound, None):
+            slots.append("_")
+        else:
+            return None
+    if next(unbound, None) is not None:
+        return None
+    head = _CTX_REF.match(callee)
+    if head is not None:
+        used.append(int(head.group(1)))
+        if used[-1] >= len(captured):
+            return None
+        receiver = captured[used[-1]] + callee[head.end() :]
+        if _is_lambda_text(receiver):
+            receiver = f"({receiver})"
+    elif _CTX_MARK in callee:
+        return None
+    else:
+        receiver = callee
+    if sorted(used) != list(range(len(captured))) or "" in slots:
+        return None
+    while slots and slots[-1] == "_":
+        slots.pop()
+    getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+    return f"{receiver}.bind({', '.join(slots)})"
 
 
 def _is_capture_variable(value: IRExpression, ir_func: IRFunction) -> bool:
