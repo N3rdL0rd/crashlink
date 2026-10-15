@@ -325,7 +325,7 @@ def type_to_haxe(type: str) -> str:
         "TypeType": "hl.Type",
         "hl.Class": "Class<Dynamic>",
         # `Enum<T>` and the runtime types of Int/Float/Bool/Dynamic share this one class.
-        "hl.BaseType": "Enum<Dynamic>",
+        "hl.BaseType": "Dynamic",
     }
     if type.startswith("hl.types.ArrayBytes_"):
         suffix = type[len("hl.types.ArrayBytes_") :]

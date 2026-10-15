@@ -32,7 +32,7 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
+from . import abstracts, enumparams, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
 from .classgenerics import ScopeEntry, class_generics, method_root
 from .std_types import STD_TYPES
 from .decomp import (
@@ -4340,6 +4340,12 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 arg_haxe_type_name = ifacenames.refine(
                     arg_haxe_type_name, code, ("r", func_core.findex.value, start_arg + i)
                 )
+                if (
+                    arg_haxe_type_name == "Dynamic"
+                    and disasm.type_name(code, arg_core_type) == "hl.BaseType"
+                    and enumparams.is_enum_parameter(code, func_core.findex.value, start_arg + i)
+                ):
+                    arg_haxe_type_name = "Enum<Dynamic>"
 
             param_name = f"arg{i}"
             local_idx = start_arg + i
