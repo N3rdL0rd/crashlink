@@ -12,8 +12,11 @@ import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field as dc_field
 from typing import Optional, List, Set, Dict, FrozenSet, Tuple, Union, cast, Any, Iterator, Iterable
+from .annotate import annotate_expression
+from .doc import RenderedSource, mark, marked, marking, render_marked, strip
+from .symbols import SymbolRef
 
-from .core import (
+from ..core import (
     Bytecode,
     Obj,
     Ref,
@@ -32,8 +35,8 @@ from .core import (
     Dyn,
     Null,
 )
-from . import disasm
-from . import (
+from .. import disasm
+from .. import (
     abstracts,
     arrayelems,
     enumparams,
@@ -45,9 +48,9 @@ from . import (
     hxsl,
     typeinit,
 )
-from .classgenerics import ScopeEntry, class_generics, method_root
-from .std_types import STD_TYPES
-from .decomp import (
+from ..classgenerics import ScopeEntry, class_generics, method_root
+from ..std_types import STD_TYPES
+from ..decomp import (
     STATIC_INIT_UNRECOVERABLE,
     IRBreak,
     IRContinue,
@@ -105,18 +108,18 @@ from .decomp import (
     IRTernary,
     IRNullCoalesce,
 )
-from .decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
-from .decomp.opt.arraytypes import function_return_elem_type, recover_closure_param_elem_types
-from .decomp.opt.clean import (
+from ..decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
+from ..decomp.opt.arraytypes import function_return_elem_type, recover_closure_param_elem_types
+from ..decomp.opt.clean import (
     default_arg_regs,
     default_arg_value,
     nullable_basic_name,
     optional_basic_name,
     overriding_default_arg_regs,
 )
-from .decomp.opt.inliner import IRTempAssignmentInliner
-from .decomp.opt.switches import conjuncts, parse_enum_match
-from .decomp.inline_calls import inline_index, is_inline_template
+from ..decomp.opt.inliner import IRTempAssignmentInliner
+from ..decomp.opt.switches import conjuncts, parse_enum_match
+from ..decomp.inline_calls import inline_index, is_inline_template
 
 
 _BASIC_TYPE_NAMES = {
@@ -1136,6 +1139,17 @@ def _array_literal_ascription(expr: IRArrayLiteral, code: Bytecode) -> Optional[
 
 
 def _expression_to_haxe(
+    expr: Optional[IRStatement],
+    code: Bytecode,
+    ir_function: Optional[IRFunction] = None,
+) -> str:
+    text = _render_expression(expr, code, ir_function)
+    if marking() and isinstance(expr, IRExpression):
+        return annotate_expression(expr, text, code, ir_function)
+    return text
+
+
+def _render_expression(
     expr: Optional[IRStatement],
     code: Bytecode,
     ir_function: Optional[IRFunction] = None,
@@ -2791,9 +2805,9 @@ def _generate_statements(
                 # A std private type (`haxe.ds.List.ListNode`) can't be named outside its module.
                 or _is_std_private_type(stmt.target.get_type(), code)
             ):
-                output_lines.append(f"{indent}var {local_name} = {value_str};")
+                output_lines.append(f"{indent}var {_local_def(local_name, ir_function)} = {value_str};")
             else:
-                output_lines.append(f"{indent}var {local_name}: {type_str} = {value_str};")
+                output_lines.append(f"{indent}var {_local_def(local_name, ir_function)}: {type_str} = {value_str};")
             declared_vars_in_scope.add(local_name)
 
         elif (
@@ -2915,8 +2929,8 @@ def _generate_statements(
                     and isinstance(b.array, (IRLocal, IRField))
                     and _plain_index(a.index)
                     and _plain_index(b.index)
-                    and _expression_to_haxe(a, code, ir_function) == target_str
-                    and _expression_to_haxe(b, code, ir_function) == target_str
+                    and strip(_expression_to_haxe(a, code, ir_function)) == strip(target_str)
+                    and strip(_expression_to_haxe(b, code, ir_function)) == strip(target_str)
                 )
 
             if (
@@ -4518,6 +4532,23 @@ def _generate_function_pseudo(ir_func: IRFunction) -> str:
     return _generate_function_pseudo_mapped(ir_func)[0]
 
 
+def _local_def(name: str, ir_function: Optional[IRFunction]) -> str:
+    """`name` as the declaration of that local of `ir_function`."""
+    if ir_function is None or name == "this":
+        return name
+    return mark(name, SymbolRef.local(ir_function.func.findex.value, name), True)
+
+
+def _param_def(param: str, ir_function: IRFunction) -> str:
+    """A rendered parameter (`?name: T = default`) with its name tagged as the declaration."""
+    name, colon, rest = param.partition(":")
+    bare = name.strip().lstrip("?")
+    if not bare or not bare.isidentifier():
+        return param
+    at = name.index(bare)
+    return name[:at] + _local_def(bare, ir_function) + name[at + len(bare) :] + colon + rest
+
+
 def _plan_declarations(
     ir_func: IRFunction,
     local_types: Dict[str, str],
@@ -4565,7 +4596,7 @@ def _plan_declarations(
         # Declaration placement is independent of initialization: omit synthetic
         # defaults only when every reachable read has a preceding assignment.
         if assigned_before_use:
-            output_lines.append(f"    var {local_name}: {type_str};")
+            output_lines.append(f"    var {_local_def(local_name, ir_func)}: {type_str};")
             continue
         default_init = {
             "Int": "0",
@@ -4577,7 +4608,7 @@ def _plan_declarations(
         if type_str.startswith("Array<"):
             default_init = "[]"
         init = f" = {default_init}" if default_init is not None else ""
-        output_lines.append(f"    var {local_name}: {type_str}{init};")
+        output_lines.append(f"    var {_local_def(local_name, ir_func)}: {type_str}{init};")
 
 
 def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int, int]]:
@@ -4802,7 +4833,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     if is_constructor or abstract_constructor:
         return_type_str = ""
 
-    params_joined_str = ", ".join(params_str_list)
+    params_joined_str = ", ".join(_param_def(p, ir_func) for p in params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
     constraints = generics.constraints(code, func_core) if variables else {}
     type_params = (
@@ -4828,7 +4859,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         if containing is not None
         else ""
     )
-    func_header = f"{member_meta}{access_kw}{static_kw}{override_kw}{inline_kw}function {func_name_str}{type_params}({params_joined_str}){ret_decl} {{"
+    func_header = f"{member_meta}{access_kw}{static_kw}{override_kw}{inline_kw}function {mark(func_name_str, SymbolRef.function(func_core.findex.value), True)}{type_params}({params_joined_str}){ret_decl} {{"
     output_lines.append(func_header)
 
     initial_declared_vars = {p.split(":")[0].strip().lstrip("?") for p in params_str_list}
@@ -4967,6 +4998,16 @@ def pseudo_oplines(ir_func: IRFunction) -> Tuple[str, Dict[int, int]]:
     final_output.append("}")
 
     return "\n".join(final_output), op_to_line
+
+
+def pseudo_spans(ir_func: IRFunction) -> RenderedSource:
+    """`pseudo_oplines()` plus the symbol each token names: the same text, with a
+    `SymbolSpan` for every local, field, method, type and enum construct in it."""
+    with marked() as table:
+        text, oplines = pseudo_oplines(ir_func)
+    rendered = render_marked(text, table)
+    rendered.oplines = oplines
+    return rendered
 
 
 def _has_explicit_assignment(local_name: str, stmt: IRStatement) -> bool:
@@ -5633,7 +5674,7 @@ def _render_interpolated(parts: List[Tuple[str, Any]]) -> str:
                 and bool(following[1])
                 and (following[1][0].isalnum() or following[1][0] == "_")
             )
-            if isinstance(operand, IRLocal) and _INTERP_SAFE_IDENT.match(simple) and not merges:
+            if isinstance(operand, IRLocal) and _INTERP_SAFE_IDENT.match(strip(simple)) and not merges:
                 out.append(f"${simple}")
             else:
                 out.append("${" + simple + "}")
@@ -5725,7 +5766,7 @@ def _private_std_members(class_name: str) -> Optional[FrozenSet[str]]:
     unqualified, and a secondary type (`hl.CoreType`) drops its module, so a name that isn't
     a path in the table matches by simple name; an HL specialisation of a generic class
     (`ArrayBytes_Int`) by the class it specialises."""
-    from .std_private import PRIVATE_STD_MEMBERS
+    from ..std_private import PRIVATE_STD_MEMBERS
 
     if class_name in PRIVATE_STD_MEMBERS:
         return PRIVATE_STD_MEMBERS[class_name]
@@ -6788,7 +6829,7 @@ def _function_extern(externs: Dict[int, Tuple[str, int]], code: Bytecode) -> str
 
 def _std_native_api(native: Native, code: Bytecode) -> Optional[Tuple[str, str, bool, bool]]:
     """The std method a native implements, as (type, method, is_static, is_public), if it's one."""
-    from .std_natives import STD_NATIVES
+    from ..std_natives import STD_NATIVES
 
     return STD_NATIVES.get((native.lib.resolve(code), native.name.resolve(code)))
 

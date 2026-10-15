@@ -178,7 +178,7 @@ The second `if` is a case where `IRConditionInliner` (or a related boolean-mergi
 
 ## Stage 4: pseudocode rendering
 
-`crashlink/pseudo.py` is the last stage: it walks the final, fully-optimized IR tree and renders Haxe-like source text. The module docstring is one line: "Pseudocode generation routines to create a Haxe representation of the decompiled IR," and that's accurate, this module doesn't do any further semantic transformation, it's a renderer.
+`crashlink/pseudo/` (the package's `__init__.py` holds the renderer) is the last stage: it walks the final, fully-optimized IR tree and renders Haxe-like source text. The module docstring is one line: "Pseudocode generation routines to create a Haxe representation of the decompiled IR," and that's accurate, this module doesn't do any further semantic transformation, it's a renderer. Alongside the text, `pseudo_spans()` reports which entity each token names; see `pseudo/symbols.py` (`SymbolRef`), `pseudo/doc.py` (the tagging and `RenderedSource`) and `pseudo/annotate.py` (which IR node yields which symbol).
 
 `pseudo(ir_func: IRFunction) -> str` (~line 1997) is the per-function entry point; it delegates to `pseudo_oplines()`, which does the actual rendering via `_generate_function_pseudo_mapped` and wraps the result in a synthetic `class { ... }` block for context (crashlink infers the class name from the function's proto/field registration, or falls back to the first argument's type if it looks like a `this` receiver). It also returns a body-relative opcode-to-line map for tooling that needs to point back from a rendered line to the originating opcode, noting explicitly that the map is partial since optimizer-created statements have no source op to point back to.
 

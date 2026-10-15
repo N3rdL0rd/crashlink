@@ -89,12 +89,14 @@ from crashlink.database import (
 from crashlink.decomp.function import IRFunction, _cached_enum_global_map
 from crashlink.decomp.inline_calls import inline_index
 from crashlink.globals import VERSION, set_dbg_callback
-from crashlink.pseudo import _method_registry, class_field_lines, pseudo_oplines
+from crashlink.pseudo import _method_registry, class_field_lines, pseudo_oplines, pseudo_spans
+from crashlink.pseudo.doc import RenderedSource
+from crashlink.pseudo.symbols import SymbolKind, SymbolRef, SymbolSpan
 
 from .themes import DEFAULT_THEME, THEMES, Theme, generate_qss
 from .undo import CommentCommand, RenameCommand, ReplaceFunctionCommand, SetStringCommand
 from .widgets.cfg_view import CfgView
-from .widgets.class_view import ClassView
+from .widgets.class_view import ClassView, wrapper_lines
 from .widgets.function_list import FunctionList, NavigatorData
 from .widgets.log_panel import LogPanel
 from .widgets.natives_view import NativesView
@@ -102,6 +104,8 @@ from .widgets.sync_view import DISASM, PSEUDO, SPLIT, SyncView
 from .widgets.types_view import TypesView
 from .widgets.xref_panel import (
     XrefPopup,
+    describe_symbol,
+    resolve_symbol,
     resolve_targets,
     XrefGroup,
     XrefSite,
@@ -257,7 +261,7 @@ class _DecompJob(QObject):
     pseudocode is rendered on `render_pool` too, so the UI thread only inserts text.
     No thread sits blocked waiting on the future."""
 
-    # token, class_key, findex, IRFunction, (pseudo text, {op index: body line})
+    # token, class_key, findex, IRFunction, RenderedSource (text, symbol spans, {op index: body line})
     finished = Signal(object, str, int, object, object)
     error = Signal(object, str, int, str)
 
@@ -286,9 +290,14 @@ class _DecompJob(QObject):
             self.error.emit(self.token, self.class_key, self.findex, str(e) or type(e).__name__)
             return
         try:
-            rendered: Tuple[str, Dict[int, int]] = pseudo_oplines(ir)
-        except Exception as e:
-            rendered = (f"class ? {{\n    // f@{self.findex} error: {e}\n}}", {})
+            rendered = pseudo_spans(ir)
+        except Exception:
+            # A failure particular to symbol tagging must not cost the text itself.
+            try:
+                text, oplines = pseudo_oplines(ir)
+                rendered = RenderedSource(text, [], oplines)
+            except Exception as e:
+                rendered = RenderedSource(f"class ? {{\n    // f@{self.findex} error: {e}\n}}")
         self.finished.emit(self.token, self.class_key, self.findex, ir, rendered)
 
 
@@ -780,6 +789,8 @@ class MainWindow(QMainWindow):
         self._ir_cache: Dict[int, object] = {}
         # findex → {opcode_index: body-relative pseudocode line}
         self._opline_cache: Dict[int, Dict[int, int]] = {}
+        # findex → the function's rendered pseudocode with the symbol each token names
+        self._spans_cache: Dict[int, RenderedSource] = {}
         # deferred navigation when the target's op map isn't cached yet
         self._pending_op_scroll: Optional[Tuple[int, int]] = None
         # global view mode (split/disasm/decompiled), applied to every open tab
@@ -818,6 +829,8 @@ class MainWindow(QMainWindow):
         self._bg_pool.setMaxThreadCount(2)
         # Token prefix ("g@", ...) -> handler for double-click follow; see add_follow_handler.
         self._follow_handlers: Dict[str, Callable[[int], None]] = {}
+        # Whether the status bar currently shows the symbol under the caret.
+        self._symbol_status_shown = False
 
         self._build_ui()
         self._build_menu()
@@ -1359,68 +1372,54 @@ class MainWindow(QMainWindow):
             return partial[0]
         return f"{len(partial)} functions match. Pick one from the list." if partial else "No such function."
 
-    def _on_follow_requested(self, findex: int, word: str) -> None:
-        """Double-click / Enter in a code pane: jump to what the word names."""
+    def _sync_view_for(self, findex: int) -> Optional[SyncView]:
+        """The open tab showing the class `findex` belongs to."""
+        class_key, _, _ = self._class_key_for(findex)
+        idx = self._open_tabs.get(class_key)
+        view = self._tabs.widget(idx) if idx is not None else None
+        return view if isinstance(view, SyncView) else None
+
+    def _on_symbol_focused(self, span: Optional[SymbolSpan]) -> None:
+        """Say what the caret is on, so what a double-click or `X` would act on is never a guess."""
         if self._code is None:
             return
-        word = word.strip()
-        if not word:
+        if span is None:
+            if self._symbol_status_shown:
+                self._symbol_status_shown = False
+                self._status_bar.clearMessage()
             return
-        ref = re.fullmatch(r"([a-z]+@)(\d+)", word)
-        if ref is not None:
-            prefix, index = ref.group(1), int(ref.group(2))
-            if prefix == "f@":
-                self.navigate_to(index)
-            elif prefix == "t@":
-                self._open_types_tab(select=index)
-            elif prefix in self._follow_handlers:
-                self._follow_handlers[prefix](index)
+        self._symbol_status_shown = True
+        self._status_bar.showMessage(describe_symbol(self._code, span.ref))
+
+    def _on_follow_requested(self, findex: int, span: Optional[SymbolSpan]) -> None:
+        """Double-click / Enter in a code pane: go to the definition of the symbol under
+        the caret. Already on the definition, list what uses it instead."""
+        if self._code is None:
+            return
+        if span is None:
+            self._status_bar.showMessage("No symbol here to follow", 3000)
+            return
+        ref = span.ref
+        if ref.kind == SymbolKind.FUNCTION:
+            if span.is_def:
+                self._show_symbol_xrefs(findex, ref)
             else:
-                self._status_bar.showMessage(f"Nothing to follow for {word}", 3000)
-            return
-
-        # A local in the current function: list its uses.
-        local_group = self._resolve_locals(findex, word)
-        if local_group is not None:
-            self.show_xrefs(word, [local_group])
-            return
-
-        # A function or method name: jump when unambiguous, preferring this class.
-        si = self._code.search_index()
-        candidates: Dict[int, Function | Native] = {}
-        for func in [*si.find_partial(word), *si.find(word)]:
-            candidates.setdefault(func.findex.value, func)
-        if len(candidates) > 1:
-            here, _, class_fis = self._class_key_for(findex)
-            same_class = [fi for fi in candidates if fi in class_fis]
-            if len(same_class) == 1:
-                self.navigate_to(same_class[0])
-                return
-        if len(candidates) == 1:
-            self.navigate_to(next(iter(candidates)))
-            return
-        if candidates:
-            groups = [
-                XrefGroup(
-                    label=f"function {_func_label(self._code, fi)}",
-                    kind="function",
-                    sites=[XrefSite(fi, _func_label(self._code, fi), None, None, "definition")],
-                )
-                for fi in candidates
-            ]
-            self.show_xrefs(f"{word}: {len(groups)} definitions", groups)
-            return
-
-        # A class/enum name: open its type.
-        for tindex, typ in enumerate(self._code.types):
-            name_ref = getattr(typ.definition, "name", None)
-            try:
-                if name_ref is not None and destaticify(name_ref.resolve(self._code)) == word:
-                    self._open_types_tab(select=tindex)
-                    return
-            except Exception:
-                continue
-        self._status_bar.showMessage(f"Nothing to follow for '{word}'", 3000)
+                self.navigate_to(ref.index)
+        elif ref.kind in (SymbolKind.TYPE, SymbolKind.FIELD, SymbolKind.ENUM_CONSTRUCT):
+            # A field or constructor is declared by its type, whose page lists it.
+            self._open_types_tab(select=ref.index)
+        elif ref.kind == SymbolKind.GLOBAL:
+            handler = self._follow_handlers.get("g@")
+            if handler is not None:
+                handler(ref.index)
+            else:
+                self._show_symbol_xrefs(findex, ref)
+        elif ref.kind == SymbolKind.LOCAL:
+            view = self._sync_view_for(ref.scope)
+            if span.is_def or view is None or not view.class_view.goto_definition(ref):
+                self._show_symbol_xrefs(findex, ref)
+        else:
+            self._status_bar.showMessage(f"Nothing to follow for {describe_symbol(self._code, ref)}", 3000)
 
     # ── Drag and drop ─────────────────────────────────────────────────────────
 
@@ -1525,6 +1524,7 @@ class MainWindow(QMainWindow):
         self._class_names.clear()
         self._ir_cache.clear()
         self._opline_cache.clear()
+        self._spans_cache.clear()
         self._pending_op_scroll = None
         self._cfg_findex = None
         self._cfg_view.clear_view()
@@ -1756,6 +1756,7 @@ class MainWindow(QMainWindow):
         self._worker.invalidate()
         self._ir_cache.clear()
         self._opline_cache.clear()
+        self._spans_cache.clear()
         self._undo_stack.clear()
         self._dirty = False
         self._update_window_title()
@@ -2058,6 +2059,7 @@ class MainWindow(QMainWindow):
         view.disasm_view.xref_requested.connect(self._on_xref_hotkey)
         view.comment_requested.connect(self._on_comment_hotkey)
         view.follow_requested.connect(self._on_follow_requested)
+        view.symbol_focused.connect(self._on_symbol_focused)
         view.disasm_view.op_focused.connect(self._on_op_focused)
 
         # Native bodies remain separate from bytecode and never enter the IR pipeline.
@@ -2071,6 +2073,7 @@ class MainWindow(QMainWindow):
             if self._code.inspection_only:
                 self._ir_cache.pop(fi, None)
                 self._opline_cache.pop(fi, None)
+                self._spans_cache.pop(fi, None)
                 text = self._recovery_text(fi)
                 self._class_results[class_key][fi] = text
                 methods.append((fi, text))
@@ -2102,7 +2105,12 @@ class MainWindow(QMainWindow):
                     )
                 )
 
-        view.load_pseudo(display_name, methods, fields=self._class_fields[class_key])
+        view.load_pseudo(
+            display_name,
+            methods,
+            fields=self._class_fields[class_key],
+            spans={fi: self._spans_cache[fi] for fi in all_fi if fi in self._spans_cache},
+        )
         self._load_disasm_pane(view, all_fi)
 
         tab_label = _tab_label(display_name)
@@ -2246,7 +2254,7 @@ class MainWindow(QMainWindow):
 
     @Slot(object, str, int, object, object)
     def _on_decompile_finished(
-        self, token: tuple, class_key: str, findex: int, ir: object, rendered: Tuple[str, Dict[int, int]]
+        self, token: tuple, class_key: str, findex: int, ir: object, rendered: RenderedSource
     ) -> None:
         if not self._accept_decompile(token, class_key, findex):
             return
@@ -2258,10 +2266,11 @@ class MainWindow(QMainWindow):
         if class_key not in self._class_results:
             return
 
-        text, opmap = rendered
+        text, opmap = rendered.text, rendered.oplines
         self._opline_cache[findex] = opmap
+        self._spans_cache[findex] = rendered
         self._class_results[class_key][findex] = text
-        self._show_method_text(class_key, findex, text)
+        self._show_method_text(class_key, findex, text, rendered)
 
         if findex == self._cfg_findex:
             self._update_cfg_view(findex)
@@ -2289,12 +2298,14 @@ class MainWindow(QMainWindow):
         self._class_results[class_key][findex] = err_text
         self._show_method_text(class_key, findex, err_text)
 
-    def _show_method_text(self, class_key: str, findex: int, text: str) -> None:
+    def _show_method_text(
+        self, class_key: str, findex: int, text: str, rendered: Optional[RenderedSource] = None
+    ) -> None:
         """Put one method's new pseudocode into its open class tab, in place."""
         idx = self._open_tabs.get(class_key)
         view = self._tabs.widget(idx) if idx is not None else None
         if isinstance(view, SyncView):
-            view.update_method(findex, text)
+            view.update_method(findex, text, rendered)
 
     def _refresh_class_view(self, class_key: str) -> None:
         idx = self._open_tabs.get(class_key)
@@ -2315,7 +2326,12 @@ class MainWindow(QMainWindow):
                 text = f"class {display_name} {{\n    // f@{fi}  decompiling...\n}}"
             methods.append((fi, text))
 
-        view.load_pseudo(display_name, methods, fields=self._class_fields.get(class_key))
+        view.load_pseudo(
+            display_name,
+            methods,
+            fields=self._class_fields.get(class_key),
+            spans={fi: self._spans_cache[fi] for fi in all_fi if fi in self._spans_cache},
+        )
 
     def _refresh_disasm_view(self, class_key: str) -> None:
         """Disasm rendering needs no decompile — re-render straight from opcodes (or
@@ -2453,6 +2469,7 @@ class MainWindow(QMainWindow):
         self._worker.invalidate(findex)
         self._ir_cache.pop(findex, None)
         self._opline_cache.pop(findex, None)
+        self._spans_cache.pop(findex, None)
         if findex == self._cfg_findex:
             self._cfg_view.show_pending()
             self._log_panel.set_context(irf=None)
@@ -2485,63 +2502,75 @@ class MainWindow(QMainWindow):
 
     # ── Xrefs (X) ────────────────────────────────────────────────────────────
 
-    def _on_xref_hotkey(self, findex: int, word: str) -> None:
+    def _on_xref_hotkey(self, findex: int, target: "SymbolRef | str | None") -> None:
+        """`X`: references to the symbol under the caret, or, for selected text that isn't
+        a symbol, to everything by that name."""
         if self._code is None:
             return
-        word = word.strip()
+        if target is None:
+            self._status_bar.showMessage("No symbol here to find references to", 3000)
+            return
+        if isinstance(target, SymbolRef):
+            self._show_symbol_xrefs(findex, target)
+            return
+        word = target.strip()
         if not word:
             return
-
-        local_group = self._resolve_locals(findex, word)
         code = self._code
 
         def show(groups: List[XrefGroup]) -> None:
-            if local_group is not None:
-                groups.insert(0, local_group)
             self.show_xrefs(word, groups)
             self._log_panel.result(f"Xrefs for '{word}': {len(groups)} target(s)")
 
         # Name resolution scans every type/field/string: keep it off the UI thread.
         self.run_background(f"Finding references to {word}...", lambda: resolve_targets(code, word), show)
 
-    def _resolve_locals(self, findex: int, word: str) -> Optional[XrefGroup]:
-        """Build a group of every occurrence of `word` (a local) in the focused
-        function's displayed pseudocode, each site carrying its body-relative line."""
-        ir = self._ir_cache.get(findex)
-        if not isinstance(ir, IRFunction):
-            return None
-        if not any(loc.name == word for loc in ir.all_locals):
-            return None
+    def _show_symbol_xrefs(self, findex: int, ref: SymbolRef) -> None:
+        """List the references to exactly `ref`."""
+        if self._code is None:
+            return
+        code = self._code
+        title = describe_symbol(code, ref)
+        if ref.kind == SymbolKind.LOCAL:
+            group = self._local_uses_group(ref)
+            self.show_xrefs(title, [group] if group is not None else [])
+            return
 
-        class_key, _, _ = self._class_key_for(findex)
-        text = self._class_results.get(class_key, {}).get(findex)
-        if not text:
+        def show(groups: List[XrefGroup]) -> None:
+            self.show_xrefs(title, groups)
+            self._log_panel.result(f"Xrefs for {title}: {sum(len(g.sites) for g in groups)} site(s)")
+
+        self.run_background(f"Finding references to {title}...", lambda: resolve_symbol(code, ref), show)
+
+    def _local_uses_group(self, ref: SymbolRef) -> Optional[XrefGroup]:
+        """Every line of the local's function that has a token naming it, each site
+        carrying its body-relative line."""
+        rendered = self._spans_cache.get(ref.scope)
+        if rendered is None:
             return None
-
-        func_lines = text.split("\n")
-        if len(func_lines) >= 3 and func_lines[0].startswith("class ") and func_lines[-1].strip() == "}":
-            content = func_lines[1:-1]
-        else:
-            content = func_lines
-
-        pat = re.compile(rf"\b{re.escape(word)}\b")
-        label = _func_label(self._code, findex) if self._code else f"f@{findex}"
+        lines = rendered.text.split("\n")
+        offset = wrapper_lines(rendered.text)
+        label = _func_label(self._code, ref.scope) if self._code else f"f@{ref.scope}"
         sites: List[XrefSite] = []
-        for j, line in enumerate(content):
-            if pat.search(line):
-                sites.append(
-                    XrefSite(
-                        source_findex=findex,
-                        source_label=label,
-                        opcode_index=None,
-                        body_line=j,
-                        ref_kind="use",
-                        snippet=line.strip(),
-                    )
+        seen: set[int] = set()
+        for span in rendered.spans_of(ref):
+            body_line = span.line - offset
+            if span.line in seen or body_line < 0:
+                continue
+            seen.add(span.line)
+            sites.append(
+                XrefSite(
+                    source_findex=ref.scope,
+                    source_label=label,
+                    opcode_index=None,
+                    body_line=body_line,
+                    ref_kind="definition" if span.is_def else "use",
+                    snippet=lines[span.line].strip(),
                 )
+            )
         if not sites:
             return None
-        return XrefGroup(label=f"local '{word}'", kind="local", sites=sites)
+        return XrefGroup(label=f"local '{ref.name}'", kind="local", sites=sites)
 
     def _navigate_to_xref(self, findex: int, op_idx: int, body_line: int) -> None:
         """Xref popup activation: a navigation, so it's recorded for Back."""

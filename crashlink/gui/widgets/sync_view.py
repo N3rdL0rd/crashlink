@@ -9,6 +9,7 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QHBoxLayout, QSplitter, QWidget
 
 from ...core import Bytecode, Function, Native
+from ...pseudo.doc import RenderedSource
 from ..themes import Theme
 from .class_view import ClassView
 from .decomp_view import DecompView
@@ -29,7 +30,8 @@ class SyncView(QWidget):
 
     cycle_requested = Signal()
     comment_requested = Signal(int, int)  # findex, op_idx, from either pane via '/'
-    follow_requested = Signal(int, str)  # findex, word, on double-click / Enter in either pane
+    follow_requested = Signal(int, object)  # findex, SymbolSpan or None, on double-click / Enter in either pane
+    symbol_focused = Signal(object)  # SymbolSpan under the caret of the pane in use, or None
 
     def __init__(self, opline_cache: Dict[int, Dict[int, int]], parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -55,6 +57,8 @@ class SyncView(QWidget):
         self.disasm_view.cursorPositionChanged.connect(self._drive_from_disasm)
         self.class_view.follow_requested.connect(self.follow_requested)
         self.disasm_view.follow_requested.connect(self.follow_requested)
+        self.class_view.symbol_focused.connect(self.symbol_focused)
+        self.disasm_view.symbol_focused.connect(self.symbol_focused)
         self.class_view.comment_menu_requested.connect(lambda: self._request_comment(self.class_view))
         self.disasm_view.comment_menu_requested.connect(lambda: self._request_comment(self.disasm_view))
 
@@ -67,14 +71,18 @@ class SyncView(QWidget):
         self.class_view.set_theme(theme)
 
     def load_pseudo(
-        self, display_name: str, methods: List[Tuple[int, str]], fields: Optional[List[str]] = None
+        self,
+        display_name: str,
+        methods: List[Tuple[int, str]],
+        fields: Optional[List[str]] = None,
+        spans: Optional[Dict[int, RenderedSource]] = None,
     ) -> None:
-        self.class_view.load_methods(display_name, methods, fields)
+        self.class_view.load_methods(display_name, methods, fields, spans)
         self._rev_cache.clear()
 
-    def update_method(self, findex: int, text: str) -> None:
+    def update_method(self, findex: int, text: str, rendered: Optional[RenderedSource] = None) -> None:
         """Replace one method's pseudocode (e.g. when its decompile finishes)."""
-        self.class_view.replace_method(findex, text)
+        self.class_view.replace_method(findex, text, rendered)
         self._rev_cache.pop(findex, None)
 
     def load_disasm(self, code: Bytecode, methods: List[Tuple[int, "Function | Native"]]) -> None:

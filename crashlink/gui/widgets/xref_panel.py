@@ -27,6 +27,7 @@ from ...core import (
     SourceKind,
     XRef,
 )
+from ...pseudo.symbols import SymbolKind, SymbolRef
 from ..themes import Theme
 
 
@@ -76,6 +77,62 @@ def site_from_ref(code: Bytecode, ref: XRef) -> XrefSite:
         body_line=None,
         ref_kind=ref.ref_kind.value,
     )
+
+
+def describe_symbol(code: Bytecode, ref: SymbolRef) -> str:
+    """A short label for what `ref` is, for the status bar and xref titles."""
+    try:
+        if ref.kind == SymbolKind.FUNCTION:
+            return f"function {_func_label(code, ref.index)}"
+        if ref.kind == SymbolKind.GLOBAL:
+            return f"global g@{ref.index} ({disasm.type_name(code, code.global_types[ref.index].resolve(code))})"
+        if ref.kind == SymbolKind.TYPE:
+            return f"type {disasm.type_name(code, code.types[ref.index])}"
+        if ref.kind == SymbolKind.FIELD:
+            owner = code.types[ref.index]
+            defn = owner.definition
+            assert isinstance(defn, Obj)
+            return f"field {disasm.type_name(code, owner)}.{defn.fields[ref.slot].name.resolve(code)}"
+        if ref.kind == SymbolKind.ENUM_CONSTRUCT:
+            owner = code.types[ref.index]
+            defn = owner.definition
+            assert isinstance(defn, Enum)
+            return f"enum {disasm.type_name(code, owner)}.{defn.constructs[ref.slot].name.resolve(code)}"
+        if ref.kind == SymbolKind.LOCAL:
+            return f"local '{ref.name}' in f@{ref.scope}"
+        if ref.kind == SymbolKind.STRING:
+            return f"string {code.strings.value[ref.index]!r}"
+    except Exception:
+        pass
+    return f"{ref.kind.value} {ref.index}"
+
+
+def resolve_symbol(code: Bytecode, ref: SymbolRef) -> List[XrefGroup]:
+    """The references to exactly the entity `ref`, with no name matching. A local has no
+    bytecode references (its uses are the pane's tokens), so it resolves to nothing here."""
+    xi = code.xref_index()
+    label = describe_symbol(code, ref)
+    if ref.kind == SymbolKind.FUNCTION:
+        refs = xi.callers_of(ref.index)
+        kind = "function"
+    elif ref.kind == SymbolKind.GLOBAL:
+        refs = xi.global_reads(ref.index) + xi.global_writes(ref.index)
+        kind = "global"
+    elif ref.kind == SymbolKind.TYPE:
+        refs = xi.type_refs(ref.index)
+        kind = "type"
+    elif ref.kind == SymbolKind.FIELD:
+        refs = xi.all_field_accesses(ref.index, ref.slot)
+        kind = "field"
+    elif ref.kind == SymbolKind.ENUM_CONSTRUCT:
+        refs = xi.construct_uses(ref.index, ref.slot)
+        kind = "enum"
+    elif ref.kind == SymbolKind.STRING:
+        refs = xi.string_uses(ref.index)
+        kind = "string"
+    else:
+        return []
+    return [XrefGroup(label=label, kind=kind, sites=[site_from_ref(code, r) for r in refs])]
 
 
 def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:

@@ -175,9 +175,11 @@ class IRIfTrueOptimizer(TraversingIROptimizer):
 
 2. **Add it to the pipeline:** In `IRFunction.__init__`, add your new optimizer to the `self.optimizers` list in the desired order.
 
-### 5. The Pseudocode Generator (`pseudo.py`)
+### 5. The Pseudocode Generator (`pseudo/`)
 
 This is the final step, turning the optimized IR into Haxe code. Contributions here involve changing how an IR node is "pretty-printed".
+
+`pseudo()` and the other entry points return plain `str`. `pseudo_spans()` returns the same text as a `RenderedSource` that also says which program entity each token names (`SymbolRef`: a function, field, local, type, enum constructor, ...), which is what the GUI's double-click and cross-references use. Symbols are recorded by `pseudo/annotate.py` from the IR node an expression came from, and tagged with `doc.mark()` while rendering under `doc.marked()`. Outside that context `mark()` returns its text unchanged, so the `str` output is never affected. If you inspect the text of an already-rendered expression (a regex, `==`, `isidentifier()`), wrap it in `doc.strip()` so the check behaves the same with tags present.
 
 * **How to contribute:**
   * To change how an Expression (like `IRArithmetic`, a subclass of `IRArithmetic`) is printed, modify `_expression_to_haxe`.

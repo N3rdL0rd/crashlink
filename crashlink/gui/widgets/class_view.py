@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QTextCursor
 from PySide6.QtWidgets import QMenu, QWidget
 
-from .decomp_view import DecompView
+from ...pseudo.doc import RenderedSource, utf16_col
+from ...pseudo.symbols import SymbolKind, SymbolRef, SymbolSpan
+from .decomp_view import DecompView, to_str_col
 from .ref_info import RefInfo
 
 
@@ -16,26 +18,42 @@ class ClassView(DecompView):
     """Renders all methods of a class together, emitting which function the cursor is in."""
 
     function_focused = Signal(int)  # findex when cursor moves to a new function
-    rename_requested = Signal(int, str)  # findex, word under cursor
-    xref_requested = Signal(int, str)  # findex, word under cursor
+    rename_requested = Signal(int, str)  # findex, name of the local under the cursor
+    #: findex, and what to find references to: a `SymbolRef`, or the selected text.
+    xref_requested = Signal(int, object)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._line_ranges: List[Tuple[int, int, int]] = []  # (start, end, findex)
         self._focused_findex: Optional[int] = None
         self._refs: Optional[RefInfo] = None
+        # findex -> (rendered source, text line of the method's first shown line).
+        self._spans: Dict[int, Tuple[RenderedSource, int]] = {}
         self.cursorPositionChanged.connect(self._on_cursor_moved)
 
     def set_ref_info(self, refs: RefInfo) -> None:
         self._refs = refs
 
+    def _attach_spans(self, findex: int, text: str, rendered: Optional[RenderedSource]) -> None:
+        """Keep `rendered`'s symbols for the method shown as `text`. They only apply to
+        exactly the text they were rendered with, so anything else drops them."""
+        if rendered is not None and rendered.text == text:
+            self._spans[findex] = (rendered, wrapper_lines(text))
+        else:
+            self._spans.pop(findex, None)
+
     def load_methods(
-        self, class_name: str, methods: List[Tuple[int, str]], fields: Optional[List[str]] = None
+        self,
+        class_name: str,
+        methods: List[Tuple[int, str]],
+        fields: Optional[List[str]] = None,
+        spans: Optional[Dict[int, RenderedSource]] = None,
     ) -> None:
         """
         Render combined class output.
         methods: list of (findex, pseudo_text) — pseudo_text may be a placeholder.
         fields: field declaration lines shown at the top of the class body.
+        spans: the rendered source (with its symbols) of the methods that have one.
         Preserves cursor block position across refreshes.
         """
         # Methods change length as their decompiles land, so a raw block number
@@ -61,9 +79,11 @@ class ClassView(DecompView):
             lines.extend(f"    {field}" for field in fields)
             lines.append("")
         self._line_ranges = []
+        self._spans = {}
 
         for findex, text in methods:
             content = _method_lines(findex, text)
+            self._attach_spans(findex, text, spans.get(findex) if spans else None)
 
             start = len(lines)
             lines.extend(content)
@@ -96,12 +116,13 @@ class ClassView(DecompView):
             self.verticalScrollBar().setValue(saved_vscroll)
         self.horizontalScrollBar().setValue(saved_hscroll)
 
-    def replace_method(self, findex: int, text: str) -> None:
+    def replace_method(self, findex: int, text: str, rendered: Optional[RenderedSource] = None) -> None:
         """Swap one method's text in place. Only that range is re-laid-out and
         re-highlighted, so methods finishing one by one don't re-render the class."""
         index = next((i for i, (_, _, fi) in enumerate(self._line_ranges) if fi == findex), None)
         if index is None:
             return
+        self._attach_spans(findex, text, rendered)
         start, end, _ = self._line_ranges[index]
         content = _method_lines(findex, text)
         delta = len(content) - (end - start + 1)
@@ -137,7 +158,9 @@ class ClassView(DecompView):
             self.blockSignals(False)
             self.verticalScrollBar().setValue(top_block + delta if top_block > end else top_block)
             self.horizontalScrollBar().setValue(hscroll)
+        self._last_highlight_word = ""
         self.refresh_highlighting(catch_up=in_view)
+        self._emit_symbol_focus()
 
     def scroll_to_findex(self, findex: int) -> None:
         """Scroll so the given function's first line is near the top of the view."""
@@ -177,14 +200,108 @@ class ClassView(DecompView):
             self._focused_findex = findex
             self.function_focused.emit(findex)
 
+    # ── Symbols ───────────────────────────────────────────────────────────────
+
+    def rendered_for(self, findex: int) -> Optional[RenderedSource]:
+        """The rendered source (symbols included) of the method as currently shown."""
+        entry = self._spans.get(findex)
+        return entry[0] if entry is not None else None
+
+    def _qt_span(self, block_no: int, span: SymbolSpan) -> SymbolSpan:
+        line = self.document().findBlockByNumber(block_no).text()
+        return SymbolSpan(
+            block_no, utf16_col(line, span.start), utf16_col(line, span.end), span.ref, span.is_def
+        )
+
+    def symbol_span_at(self, block_no: int, col: int) -> Optional[SymbolSpan]:
+        for start, end, findex in self._line_ranges:
+            if not start <= block_no <= end:
+                continue
+            entry = self._spans.get(findex)
+            if entry is None:
+                return None
+            rendered, offset = entry
+            line = self.document().findBlockByNumber(block_no).text()
+            span = rendered.span_at(block_no - start + offset, to_str_col(line, col))
+            return self._qt_span(block_no, span) if span is not None else None
+        return None
+
+    def symbol_ranges(self, ref: SymbolRef, first: int, last: int) -> List[Tuple[int, int, int]]:
+        ranges: List[Tuple[int, int, int]] = []
+        for start, end, findex in self._line_ranges:
+            if end < first or start > last:
+                continue
+            entry = self._spans.get(findex)
+            if entry is None:
+                continue
+            rendered, offset = entry
+            for span in rendered.spans_of(ref):
+                block_no = start + span.line - offset
+                if first <= block_no <= last and start <= block_no <= end:
+                    shown = self._qt_span(block_no, span)
+                    ranges.append((block_no, shown.start, shown.end))
+        return ranges
+
+    def goto_definition(self, ref: SymbolRef) -> bool:
+        """Move the caret to the token declaring `ref` (a local's `var`, a method's
+        header) when this pane shows it. False when it does not."""
+        for start, _, findex in self._line_ranges:
+            if ref.kind == SymbolKind.LOCAL and findex != ref.scope:
+                continue
+            if ref.kind == SymbolKind.FUNCTION and findex != ref.index:
+                continue
+            entry = self._spans.get(findex)
+            if entry is None:
+                continue
+            rendered, offset = entry
+            span = rendered.definition_of(ref)
+            if span is None:
+                continue
+            block_no = start + span.line - offset
+            shown = self._qt_span(block_no, span)
+            block = self.document().findBlockByNumber(block_no)
+            cursor = self.textCursor()
+            cursor.setPosition(block.position() + shown.start)
+            self.setTextCursor(cursor)
+            self.centerCursor()
+            self.setFocus()
+            return True
+        return False
+
+    def symbol_uses(self, ref: SymbolRef) -> List[Tuple[int, int, str]]:
+        """(findex, line within the method's shown body, line text) of every line of the
+        pane that has a token naming `ref`."""
+        uses: List[Tuple[int, int, str]] = []
+        for start, end, findex in self._line_ranges:
+            entry = self._spans.get(findex)
+            if entry is None:
+                continue
+            rendered, offset = entry
+            seen = set()
+            for span in rendered.spans_of(ref):
+                body_line = span.line - offset
+                if body_line in seen or not 0 <= start + body_line <= end:
+                    continue
+                seen.add(body_line)
+                uses.append(
+                    (findex, body_line, self.document().findBlockByNumber(start + body_line).text().strip())
+                )
+        return uses
+
+    def _rename_word(self) -> str:
+        span = self.symbol_at_cursor()
+        if span is not None and span.ref.kind == SymbolKind.LOCAL:
+            return span.ref.name
+        return self._word_at_cursor()
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if not event.modifiers():
             findex = self.findex_at_cursor()
             if event.key() == Qt.Key.Key_N and findex is not None:
-                self.rename_requested.emit(findex, self._word_at_cursor())
+                self.rename_requested.emit(findex, self._rename_word())
                 return
             if event.key() == Qt.Key.Key_X and findex is not None:
-                self.xref_requested.emit(findex, self._word_at_cursor())
+                self.xref_requested.emit(findex, self._xref_target())
                 return
         super().keyPressEvent(event)
 
@@ -208,16 +325,25 @@ class ClassView(DecompView):
         findex = self.findex_at_cursor()
         if findex is None:
             return
-        word = self._word_at_cursor()
-        menu.addAction("Cross-references\tX", lambda: self.xref_requested.emit(findex, word))
-        menu.addAction("Rename\tN", lambda: self.rename_requested.emit(findex, word))
+        target = self._xref_target()
+        menu.addAction("Cross-references\tX", lambda: self.xref_requested.emit(findex, target))
+        menu.addAction("Rename\tN", lambda: self.rename_requested.emit(findex, self._rename_word()))
         menu.addAction("Comment\t/", self.comment_menu_requested.emit)
+
+
+def wrapper_lines(text: str) -> int:
+    """How many leading lines of `text` the class view drops (pseudo wraps each method in
+    `class X {` ... `}`)."""
+    func_lines = text.split("\n")
+    if len(func_lines) >= 3 and func_lines[0].startswith("class ") and func_lines[-1].strip() == "}":
+        return 1
+    return 0
 
 
 def _method_lines(findex: int, text: str) -> List[str]:
     """A method's lines as shown in the class body. pseudo wraps each method in
     `class X {` ... `}`, which is stripped."""
     func_lines = text.split("\n")
-    if len(func_lines) >= 3 and func_lines[0].startswith("class ") and func_lines[-1].strip() == "}":
+    if wrapper_lines(text):
         return func_lines[1:-1]
     return [f"    // f@{findex}"] if not func_lines else func_lines

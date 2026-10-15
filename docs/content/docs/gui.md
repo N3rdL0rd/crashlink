@@ -45,12 +45,14 @@ In the disassembly, call targets show their name (`f@439 h2d.Scene.over`), const
 
 Keys in a sync view (IDA-style; **Help › Keyboard Shortcuts** lists everything):
 
-- **Double-click / Enter**: follow the function, type, global or local under the cursor.
+- **Double-click / Enter**: go to the definition of the symbol under the caret: a called function, a type, a field's or enum constructor's type, a global, or a local's declaration. On a definition itself (a method header, a `var`) it lists the uses instead.
 - **Esc / Alt+Left** and **Ctrl+Enter / Alt+Right**: back and forward through your jumps.
 - **G**: jump to a function by index (`f@123`) or name, with completion.
-- **X**: cross-references to the word under the cursor, listed by site with the code at each one.
+- **X**: cross-references to the symbol under the caret, listed by site with the code at each one. Selected text that isn't a symbol is searched by name instead.
 - **N**: rename a local; **/**: comment an opcode.
 - **Ctrl+F**: find in the pane, with a match count.
+
+The pane always knows which symbol the caret is on, and the status bar names it (`field Shadow.n`, `local 'n' in f@12`). Highlighting follows the same symbol, not the same spelling, so a local and a field both called `n` are never lit together. In the pseudocode this comes from the renderer, which records what each token it prints refers to (`pseudo_spans`); in the disassembly it comes from the `f@N`, `g@N` and `t@N` tokens. Text with no recorded symbol, such as a keyword or a function still decompiling, follows nothing.
 
 ## Other browsers
 

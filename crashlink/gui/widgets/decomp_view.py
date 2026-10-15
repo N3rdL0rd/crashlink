@@ -24,7 +24,20 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QMenu, QPlainTextEdit, QTextEdit, QToolTip, QWidget
 
+from ...pseudo.symbols import SymbolRef, SymbolSpan
 from ..themes import Theme
+
+
+def to_str_col(line: str, qt_col: int) -> int:
+    """Convert a Qt (UTF-16) column on `line` to a str column."""
+    if line.isascii():
+        return qt_col
+    units = 0
+    for i, ch in enumerate(line):
+        if units >= qt_col:
+            return i
+        units += 2 if ord(ch) > 0xFFFF else 1
+    return len(line)
 
 
 class _Rule:
@@ -151,8 +164,10 @@ class DecompView(QPlainTextEdit):
     """Read-only code pane: syntax highlighting, word/sync-line highlights, follow
     (double-click / Enter), hover tooltips, and a context menu of the pane actions."""
 
-    #: (findex at cursor, word under cursor), on double-click or Enter.
-    follow_requested = Signal(int, str)
+    #: (findex at cursor, symbol span under cursor or None), on double-click or Enter.
+    follow_requested = Signal(int, object)
+    #: The symbol (a `SymbolSpan`) under the cursor, or None; fires when it changes.
+    symbol_focused = Signal(object)
     #: The '/' comment action picked from the context menu (SyncView resolves the op).
     comment_menu_requested = Signal()
 
@@ -170,7 +185,7 @@ class DecompView(QPlainTextEdit):
         self.setFont(font)
         self._highlighter: Optional[DecompHighlighter] = None
         self._theme: Optional[Theme] = None
-        self._last_highlight_word: str = ""
+        self._last_highlight_word: "str | SymbolRef" = ""
         self._word_sel: List[QTextEdit.ExtraSelection] = []
         self._sync_sel: List[QTextEdit.ExtraSelection] = []
         self._sync_block: Optional[int] = None
@@ -184,6 +199,8 @@ class DecompView(QPlainTextEdit):
         self._word_timer.setInterval(60)
         self._word_timer.timeout.connect(self._update_highlights)
         self.cursorPositionChanged.connect(self._word_timer.start)
+        self._focused_symbol: Optional[SymbolSpan] = None
+        self.cursorPositionChanged.connect(self._emit_symbol_focus)
         self._quiet_scroll = False
         self.verticalScrollBar().valueChanged.connect(self._on_scrolled)
 
@@ -266,6 +283,49 @@ class DecompView(QPlainTextEdit):
         """Rich-text hover for the text at `cursor`, or None."""
         return None
 
+    # ── Symbols: overridden by panes that know what their tokens name ─────────
+
+    def symbol_span_at(self, block_no: int, col: int) -> Optional[SymbolSpan]:
+        """The symbol whose token covers column `col` (a Qt, UTF-16 column) of block
+        `block_no`; the returned span's columns are Qt columns as well."""
+        return None
+
+    def symbol_ranges(self, ref: SymbolRef, first: int, last: int) -> List[Tuple[int, int, int]]:
+        """(block, start col, end col) of every token naming `ref` within blocks
+        `first`..`last`, as Qt columns."""
+        return []
+
+    def symbol_at_cursor(self) -> Optional[SymbolSpan]:
+        """The symbol the caret (or the start of the selection) is on. A caret just past
+        the end of a token still counts as on it."""
+        cursor = self.textCursor()
+        block = cursor.block()
+        pos = cursor.selectionStart() if cursor.hasSelection() else cursor.position()
+        col = pos - block.position()
+        span = self.symbol_span_at(block.blockNumber(), col)
+        if span is None and col > 0 and not cursor.hasSelection():
+            span = self.symbol_span_at(block.blockNumber(), col - 1)
+        return span
+
+    def _xref_target(self) -> "SymbolRef | str | None":
+        """What the xref action is about: the symbol under the caret, or, when the user
+        selected text that isn't that symbol, the selected text."""
+        span = self.symbol_at_cursor()
+        cursor = self.textCursor()
+        if span is not None:
+            if not cursor.hasSelection():
+                return span.ref
+            if cursor.selectionEnd() - cursor.block().position() <= span.end:
+                return span.ref
+        selected = self._word_at_cursor() if cursor.hasSelection() else ""
+        return selected or None
+
+    def _emit_symbol_focus(self) -> None:
+        span = self.symbol_at_cursor()
+        if span != self._focused_symbol:
+            self._focused_symbol = span
+            self.symbol_focused.emit(span)
+
     # ── Highlights ───────────────────────────────────────────────────────────
 
     def _apply_selections(self) -> None:
@@ -297,8 +357,38 @@ class DecompView(QPlainTextEdit):
         if not self._quiet_scroll:
             self.refresh_highlighting()
 
+    def _highlight_symbol(self, ref: SymbolRef) -> None:
+        """Highlight every visible token naming `ref` (the same entity, not the same spelling)."""
+        if ref == self._last_highlight_word:
+            return
+        self._last_highlight_word = ref
+        bg = QColor(self._theme.accent if self._theme else "#b4befe")
+        bg.setAlpha(60)
+        fmt = QTextCharFormat()
+        fmt.setBackground(bg)
+        doc = self.document()
+        first, last = self._visible_blocks()
+        selections: List[QTextEdit.ExtraSelection] = []
+        for block_no, start, end in self.symbol_ranges(ref, first, last):
+            block = doc.findBlockByNumber(block_no)
+            if not block.isValid():
+                continue
+            c = QTextCursor(doc)
+            c.setPosition(block.position() + start)
+            c.setPosition(block.position() + end, QTextCursor.MoveMode.KeepAnchor)
+            sel = QTextEdit.ExtraSelection()
+            sel.cursor = c
+            sel.format = fmt
+            selections.append(sel)
+        self._word_sel = selections
+        self._apply_selections()
+
     def _update_highlights(self) -> None:
         cursor = self.textCursor()
+        symbol = None if cursor.hasSelection() else self.symbol_at_cursor()
+        if symbol is not None:
+            self._highlight_symbol(symbol.ref)
+            return
         # Prefer an explicit selection; fall back to word under cursor.
         if cursor.hasSelection():
             word = cursor.selectedText().strip()
@@ -357,9 +447,8 @@ class DecompView(QPlainTextEdit):
 
     def _emit_follow(self) -> None:
         findex = self.findex_at_cursor()
-        word = self._word_at_cursor()
-        if findex is not None and word:
-            self.follow_requested.emit(findex, word)
+        if findex is not None:
+            self.follow_requested.emit(findex, self.symbol_at_cursor())
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         super().mouseDoubleClickEvent(event)  # moves the cursor / selects the word

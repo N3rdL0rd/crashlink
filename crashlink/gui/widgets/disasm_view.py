@@ -14,7 +14,9 @@ from PySide6.QtWidgets import QMenu, QWidget
 from ... import disasm
 from ...core import Bytecode, Function, Native
 from ..themes import Theme
-from .decomp_view import DecompHighlighter, DecompView
+from ...pseudo.doc import utf16_col
+from ...pseudo.symbols import SymbolRef, SymbolSpan
+from .decomp_view import DecompHighlighter, DecompView, to_str_col
 from .ref_info import RefInfo
 
 # f@N / g@N / t@N / e@N reference tokens, exactly as disasm.py renders them,
@@ -132,7 +134,7 @@ class DisasmView(DecompView):
     name appended (`f@439 h2d.Scene.over`), and constant-string globals their value."""
 
     function_focused = Signal(int)  # findex when cursor moves to a new function
-    xref_requested = Signal(int, str)  # findex, word/ref-token under cursor
+    xref_requested = Signal(int, object)  # findex, SymbolRef (or the selected text) to find references to
     op_focused = Signal(int, int)  # findex, op_idx when the cursor moves onto another op
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -364,11 +366,49 @@ class DisasmView(DecompView):
                 return f"<b>reg{m.group(1)}</b>: {html.escape(m.group(2))}"
         return None
 
+    def _token_symbol(self, kind: str, index: int, preceded_by: str) -> Optional[SymbolRef]:
+        """What a `f@N` / `g@N` / `t@N` token names. `this.f@N` (disasm's fallback for a
+        field whose object it could not find) spells a field slot, not a function."""
+        if kind == "f" and not preceded_by.endswith("."):
+            return SymbolRef.function(index)
+        if kind == "g":
+            return SymbolRef.global_(index)
+        if kind == "t":
+            return SymbolRef.type_(index)
+        return None
+
+    def _line_symbols(self, text: str) -> List[Tuple[int, int, SymbolRef]]:
+        """(start, end, ref) in str columns of the reference tokens of one line."""
+        found: List[Tuple[int, int, SymbolRef]] = []
+        for m in _REF_SPAN_RX.finditer(text):
+            ref = self._token_symbol(m.group(1), int(m.group(2)), text[: m.start()])
+            if ref is not None:
+                found.append((m.start(), m.end(), ref))
+        return found
+
+    def symbol_span_at(self, block_no: int, col: int) -> Optional[SymbolSpan]:
+        text = self.document().findBlockByNumber(block_no).text()
+        str_col = to_str_col(text, col)
+        for start, end, ref in self._line_symbols(text):
+            if start <= str_col < end:
+                return SymbolSpan(block_no, utf16_col(text, start), utf16_col(text, end), ref)
+        return None
+
+    def symbol_ranges(self, ref: SymbolRef, first: int, last: int) -> List[Tuple[int, int, int]]:
+        doc = self.document()
+        ranges: List[Tuple[int, int, int]] = []
+        for block_no in range(first, min(last, doc.blockCount() - 1) + 1):
+            text = doc.findBlockByNumber(block_no).text()
+            for start, end, found in self._line_symbols(text):
+                if found == ref:
+                    ranges.append((block_no, utf16_col(text, start), utf16_col(text, end)))
+        return ranges
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if not event.modifiers() and event.key() == Qt.Key.Key_X:
             findex = self.findex_at_cursor()
             if findex is not None:
-                self.xref_requested.emit(findex, self._word_at_cursor())
+                self.xref_requested.emit(findex, self._xref_target())
                 return
         super().keyPressEvent(event)
 
@@ -377,7 +417,7 @@ class DisasmView(DecompView):
         findex = self.findex_at_cursor()
         if findex is None:
             return
-        word = self._word_at_cursor()
-        menu.addAction("Cross-references\tX", lambda: self.xref_requested.emit(findex, word))
+        target = self._xref_target()
+        menu.addAction("Cross-references\tX", lambda: self.xref_requested.emit(findex, target))
         if self.op_at_cursor() is not None:
             menu.addAction("Comment\t/", self.comment_menu_requested.emit)
