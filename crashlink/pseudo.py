@@ -114,6 +114,8 @@ from .decomp.opt.clean import (
     optional_basic_name,
     overriding_default_arg_regs,
 )
+from .decomp.opt.inliner import IRTempAssignmentInliner
+from .decomp.opt.switches import conjuncts, parse_enum_match
 from .decomp.inline_calls import inline_index, is_inline_template
 
 
@@ -1395,6 +1397,9 @@ def _expression_to_haxe(
             return "false"
         elif expr.op in (IRBoolExpr.CompareType.OR, IRBoolExpr.CompareType.AND):
             sym = "||" if expr.op == IRBoolExpr.CompareType.OR else "&&"
+            matched = _enum_match_prefix(expr, code, ir_function) if sym == "&&" else None
+            if matched is not None:
+                return matched
             left = _expr_to_haxe_with_precedence(expr.left, code, ir_function, sym)
             right = _expr_to_haxe_with_precedence(expr.right, code, ir_function, sym)
             return f"{left} {sym} {right}"
@@ -1558,6 +1563,7 @@ def _expression_to_haxe(
                 getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
                 captured = [_expression_to_haxe(c, code, ir_function) for c in expr.captures]
                 params, body = ctx_entry
+                body = _unshadow_captures(body, captured)
                 body = re.sub(_CTX_MARK + r"(\d+)" + _CTX_MARK, lambda m: captured[int(m.group(1))], body)
                 return f"({', '.join(params[1:])}) -> {body}"
         # The function is the head of a `.bind`, so it takes the environment as its first parameter and
@@ -1583,6 +1589,9 @@ def _expression_to_haxe(
         block = None if stale else _inline_block_closure(expr, obj_str, len(extra_args), code, ir_function)
         if block is not None:
             return block
+        context_bind = _context_bind(expr, code, ir_function)
+        if context_bind is not None:
+            return context_bind
         forwarded = _forwarded_bind(expr, obj_str, code, ir_function)
         if forwarded is not None:
             # `Type.method.bind(a, _)`: the compiler wraps the function in a helper that only calls it.
@@ -1693,6 +1702,8 @@ def _expression_to_haxe(
         return f"Type.enumIndex({inner})"
 
     elif isinstance(expr, IREnumField):
+        if expr.binding is not None:
+            return expr.binding.name
         if (
             isinstance(expr.value, IRLocal)
             and getattr(ir_function, "_ctx_param", None) == expr.value.name
@@ -1749,6 +1760,14 @@ def _expression_to_haxe(
                 rendered = _render_string_concat(expr, code, ir_function)
                 if rendered is not None:
                     return rendered
+            # `Reflect.makeVarArgs(f)` is an extern generic over the function's return type; the
+            # compiler calls the private `_makeVarArgs` with `f` adapted to return Dynamic.
+            if (
+                _is_std_function(func, code)
+                and code.full_func_name(func) == "$Reflect._makeVarArgs"
+                and len(expr.args) == 1
+            ):
+                return f"Reflect.makeVarArgs({_expression_to_haxe(expr.args[0], code, ir_function)})"
             # `cast(v, C)` and `Std.isOfType(v, C)` on a class reach `hl.BaseType.check` with the
             # class object as receiver; source has no such call, `Std.isOfType` is the same test.
             if (
@@ -3591,7 +3610,7 @@ def _closure_block_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str]
     )
     if open_at is None or not lines[-1].strip() == "}":
         return None
-    header = re.search(r"function [\w$]+\((.*)\)(?:: ([^{]*))? \{\s*$", lines[open_at])
+    header = _function_header(lines[open_at])
     if header is None:
         return None
     parts = [part.strip() for part in _split_params(header.group(1))]
@@ -3630,7 +3649,92 @@ def _walk_ir(node: Optional[IRStatement]) -> Iterator[IRStatement]:
             yield from _walk_ir(child)
 
 
-def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: List[IRLocal]) -> bool:
+_CTX_REF = re.compile(_CTX_MARK + r"(\d+)" + _CTX_MARK)
+
+
+def _context_bind(expr: "IRBoundClosure", code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+    """`f.bind(a, _)` for a closure over a capture context whose body only calls what the context
+    holds with what it holds and its own parameters.
+
+    `f.bind(args)` evaluates the arguments into variables and calls `f` inside a closure over
+    them, so all of them (and the receiver of a method value) travel in one context. The helper's
+    body is `<ctx 1>.process(<ctx 0>)` or `<ctx 0>(<ctx 1>, x)`; the bound values come out in the
+    order of the call, `_` stands for each parameter of the closure."""
+    entry = getattr(ir_function, "_ctx_closure_bodies", {}).get(expr.fun.findex.value)
+    context = expr.obj
+    if entry is None or not isinstance(context, IREnumConstruct) or expr.captures is not None:
+        return None
+    enum_def = context.get_type().definition
+    if not (isinstance(enum_def, Enum) and enum_def.name.value == 0):
+        return None
+    # The arguments are evaluated before the closure is made and, in source, in call order: values
+    # whose evaluation could be told apart from that order are not rebound.
+    impure = [a for a in context.args if not isinstance(a, (IRLocal, IRConst))]
+    if len(impure) > 1:
+        return None
+    params, body = entry
+    if "\n" in body or '"' in body or "'" in body or not body.endswith(")"):
+        return None
+    depth = 0
+    for at in range(len(body) - 1, -1, -1):
+        depth += {")": 1, "(": -1}.get(body[at], 0)
+        if depth == 0:
+            break
+    callee, inner = body[:at], body[at + 1 : -1]
+    if not re.fullmatch(r"[\w.$\x00]+", callee) or depth != 0:
+        return None
+    arguments = [part.strip() for part in _split_params(inner)] if inner.strip() else []
+    captured = [_expression_to_haxe(a, code, ir_function) for a in context.args]
+    used: List[int] = []
+    unbound = iter(params[1:])
+    slots: List[str] = []
+    for argument in arguments:
+        reference = _CTX_REF.fullmatch(argument)
+        if reference is not None:
+            used.append(int(reference.group(1)))
+            slots.append(captured[used[-1]] if used[-1] < len(captured) else "")
+        elif argument == next(unbound, None):
+            slots.append("_")
+        else:
+            return None
+    if next(unbound, None) is not None:
+        return None
+    head = _CTX_REF.match(callee)
+    if head is not None:
+        used.append(int(head.group(1)))
+        if used[-1] >= len(captured):
+            return None
+        receiver = captured[used[-1]] + callee[head.end() :]
+        if _is_lambda_text(receiver):
+            receiver = f"({receiver})"
+    elif _CTX_MARK in callee:
+        return None
+    else:
+        receiver = callee
+    if sorted(used) != list(range(len(captured))) or "" in slots:
+        return None
+    while slots and slots[-1] == "_":
+        slots.pop()
+    getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+    return f"{receiver}.bind({', '.join(slots)})"
+
+
+def _is_capture_variable(value: IRExpression, ir_func: IRFunction) -> bool:
+    """Whether a capture-context argument is a variable the source named: a local, or a read of
+    the enclosing closure's own context (a variable it captured itself). A constant or any other
+    computation is not captured by a lambda: it comes from a `.bind` argument instead."""
+    if isinstance(value, IRLocal):
+        return True
+    ctx_param = getattr(ir_func, "_ctx_param_name", None)
+    return (
+        isinstance(value, IREnumField)
+        and isinstance(value.value, IRLocal)
+        and value.value.name == ctx_param
+        and value.field_name.startswith("param")
+    )
+
+
+def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: List[IRExpression]) -> bool:
     """Whether every write to a captured variable runs before `block.statements[idx]` on every path to it."""
 
     def ancestry(node: IRBlock) -> Optional[List[Tuple[IRBlock, int]]]:
@@ -3648,20 +3752,39 @@ def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: Li
     if path is None:
         return False
     settled = {id(s) for owner, at in path for s in owner.statements[:at]}
+    variables = [c for c in captured if isinstance(c, IRLocal)]
     for node in _walk_ir(ir_func.block):
-        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target in captured:
+        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target in variables:
             if id(node) not in settled:
                 return False
     return True
 
 
-def _shadows_captures(params: List[str], body: str, captured: List[IRLocal]) -> bool:
-    """Whether a closure's parameters or body declares a local with the name of a captured
-    variable. Such a name would hide the capture inside the lambda."""
-    names = {c.name for c in captured}
-    if names & {p.lstrip("?").split(" = ")[0] for p in params[1:]}:
-        return True
-    return any(re.search(rf"\bvar {re.escape(n)}\b", body) for n in names)
+def _parameters_shadow(params: List[str], captured: List[IRExpression]) -> bool:
+    """Whether a lambda's own parameter has the name of a captured variable. The body names both
+    the same way, so the two can no longer be told apart."""
+    names = {c.name for c in captured if isinstance(c, IRLocal)}
+    return bool(names & {p.lstrip("?").split(" = ")[0].split(":")[0].strip() for p in params[1:]})
+
+
+def _unshadow_captures(body: str, captured: List[str]) -> str:
+    """Rename what a lambda body declares (locals, loop and catch variables) when the name is also
+    used by a captured expression: inside the lambda the declaration would hide the captured
+    variable it was meant to read."""
+    declared = {m for m in re.findall(r"\bvar (\w+)", body)}
+    declared.update(m for pair in re.findall(r"\bfor \((\w+)(?: => (\w+))? in", body) for m in pair if m)
+    declared.update(re.findall(r"\bcatch \((\w+)", body))
+    used = {w for text in captured for w in re.findall(r"[A-Za-z_]\w*", text)}
+    taken = used | set(re.findall(r"[A-Za-z_]\w*", body)) | declared
+    for name in sorted(declared & used):
+        fresh, n = f"{name}_", 1
+        while fresh in taken:
+            n += 1
+            fresh = f"{name}_{n}"
+        taken.add(fresh)
+        pattern = re.compile(rf"(?<![\w.]){re.escape(name)}(?!\w)")
+        body = disasm.outside_literals(body, lambda chunk: pattern.sub(fresh, chunk))
+    return body
 
 
 def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[List[str], str]]) -> None:
@@ -3677,17 +3800,70 @@ def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[L
                     and isinstance(node.obj, IREnumConstruct)
                     and isinstance(node.obj.get_type().definition, Enum)
                     and cast(Enum, node.obj.get_type().definition).name.value == 0
-                    and all(isinstance(a, IRLocal) for a in node.obj.args)
+                    and all(_is_capture_variable(a, ir_func) for a in node.obj.args)
                 ):
                     continue
-                captured = cast(List[IRLocal], node.obj.args)
+                captured = node.obj.args
                 params, body = ctx_bodies[node.fun.findex.value]
                 if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
                     continue
-                if _shadows_captures(params, body, captured):
+                if _parameters_shadow(params, captured):
                     continue
                 if _captures_stable(ir_func, block, idx, captured):
                     node.captures = list(captured)
+
+
+def _collapse_adapter_guards(ir_func: IRFunction) -> None:
+    """`t = f == null ? null : adapter(f)` is `t = f`.
+
+    Converting a function value to a function type that differs only in a return or Dynamic
+    argument type wraps it in an adapter helper, guarded by a null test; the source passed `f`
+    and the compiler adds both again."""
+    code = ir_func.code
+    for block in [n for n in _walk_ir(ir_func.block) if isinstance(n, IRBlock)]:
+        for idx, stmt in enumerate(block.statements):
+            if not (
+                isinstance(stmt, IRConditional)
+                and isinstance(stmt.condition, IRBoolExpr)
+                and stmt.condition.op == IRBoolExpr.CompareType.NULL
+                and isinstance(stmt.condition.left, IRLocal)
+                and len(stmt.true_block.statements) == 1
+                and len(stmt.false_block.statements) == 1
+            ):
+                continue
+            null_branch, call_branch = stmt.true_block.statements[0], stmt.false_block.statements[0]
+            if not (
+                isinstance(null_branch, IRAssign)
+                and isinstance(call_branch, IRAssign)
+                and null_branch.target == call_branch.target
+                and isinstance(null_branch.expr, IRConst)
+                and null_branch.expr.const_type == IRConst.ConstType.NULL
+                and isinstance(call_branch.expr, IRBoundClosure)
+                and call_branch.expr.obj == stmt.condition.left
+            ):
+                continue
+            function = _expression_to_haxe(stmt.condition.left, code, ir_func)
+            if _closure_adapter(call_branch.expr, function, code, ir_func) != function:
+                continue
+            # Assigned to a temporary of the adapted function type, `f` would not type-check
+            # (`Void -> Void` is not `Void -> Dynamic`); where the compiler adapts it is the
+            # call it is passed to, so the temporary has to go.
+            target = call_branch.target
+            if not (isinstance(target, IRLocal) and idx + 1 < len(block.statements)):
+                continue
+            mentions = sum(
+                1
+                for node in _walk_ir(ir_func.block)
+                if isinstance(node, IRLocal) and node.name == target.name
+            )
+            # Two writes (the guard's branches) and the one read in the next statement, nothing else.
+            if mentions != 3 or _count_local_reads_and_writes(ir_func.block, target.name) != (1, 2):
+                continue
+            if IRTempAssignmentInliner(ir_func)._substitute_in_statement(
+                block.statements[idx + 1], target, call_branch.expr
+            ):
+                del block.statements[idx]
+                return _collapse_adapter_guards(ir_func)
 
 
 def _hoist_closure_contexts(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[List[str], str]]) -> None:
@@ -3710,7 +3886,7 @@ def _hoist_closure_contexts(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[Lis
                     and isinstance(stmt.expr, IREnumConstruct)
                     and isinstance(stmt.expr.get_type().definition, Enum)
                     and cast(Enum, stmt.expr.get_type().definition).name.value == 0
-                    and all(isinstance(a, IRLocal) for a in stmt.expr.args)
+                    and all(_is_capture_variable(a, ir_func) for a in stmt.expr.args)
                 ):
                     continue
                 if _hoist_one_context(ir_func, block, idx, ctx_bodies):
@@ -3725,7 +3901,7 @@ def _hoist_one_context(
 ) -> bool:
     stmt = cast(IRAssign, block.statements[idx])
     ctx = cast(IRLocal, stmt.target)
-    captured = cast(List[IRLocal], cast(IREnumConstruct, stmt.expr).args)
+    captured = cast(IREnumConstruct, stmt.expr).args
     closures: List[IRBoundClosure] = []
     last_use = -1
     for j, later in enumerate(block.statements):
@@ -3778,12 +3954,45 @@ def _hoist_one_context(
         params, body = entry
         if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
             return False
-        if _shadows_captures(params, body, captured):
-            return False  # a parameter or a local of the body would shadow a captured variable
+        if _parameters_shadow(params, captured):
+            return False
     for closure in closures:
         closure.captures = list(captured)
     del block.statements[idx]
     return True
+
+
+def _void_return_adapter(helper_ir: IRFunction) -> bool:
+    """Whether a helper only calls its first parameter with the others and returns nothing (null).
+
+    Passing a function that returns Void where one returning Dynamic is expected wraps it in such
+    a helper (`Reflect.makeVarArgs(f)` with `f:Array<Dynamic>->Void`); source wrote the function."""
+    signature = helper_ir.func.type.resolve(helper_ir.code).definition
+    if not isinstance(signature, Fun) or not signature.args:
+        return False
+    statements = list(helper_ir.block.statements)
+    if (
+        statements
+        and isinstance(statements[-1], IRReturn)
+        and (
+            statements[-1].value is None
+            or (
+                isinstance(statements[-1].value, IRConst)
+                and statements[-1].value.const_type == IRConst.ConstType.NULL
+            )
+        )
+    ):
+        statements.pop()
+    if len(statements) != 1 or not isinstance(statements[0], IRCall):
+        return False
+    call = statements[0]
+    names = [local.name for local in helper_ir.locals[: len(signature.args)]]
+    return (
+        len(names) == len(signature.args)
+        and isinstance(call.target, IRLocal)
+        and call.target.name == names[0]
+        and [a.name if isinstance(a, IRLocal) else None for a in call.args] == names[1:]
+    )
 
 
 def _optional_ref_adapter(helper_ir: IRFunction) -> Optional[List[bool]]:
@@ -3880,7 +4089,7 @@ def _inline_block_closure(
     )
     if open_at is None or not lines[-1].strip() == "}":
         return None
-    header = re.search(r"function [\w$]+\((.*)\)(?:: ([^{]*))? \{\s*$", lines[open_at])
+    header = _function_header(lines[open_at])
     if header is None:
         return None
     parts = [part.strip() for part in _split_params(header.group(1))]
@@ -3903,6 +4112,51 @@ def _inline_block_closure(
     ret = f": {returns.strip()}" if returns and returns.strip() not in ("", "Void") else ""
     indented = "\n".join(("    " + line) if line else line for line in inner.splitlines())
     return f"function({params}){ret} {{\n{indented}\n}}"
+
+
+def _enum_match_prefix(expr: IRBoolExpr, code: Bytecode, ir_function: Optional[IRFunction]) -> Optional[str]:
+    """`e.match(Ctor(_, 0, Inner))` for `enumIndex(e) == K && e.param1 == 0 && enumIndex(e.param2) == J`.
+
+    A pattern compiles to the constructor test followed by the payload comparisons and the
+    nested constructor tests, in order. Only a leading run of such tests becomes the pattern;
+    whatever follows stays a plain conjunction."""
+    parts = conjuncts(expr)
+    parsed = parse_enum_match(parts, code)
+    if parsed is None or parsed[2] == 1:
+        return None
+    value, pattern, used = parsed
+    rendered = (
+        f"{_expression_to_haxe(value, code, ir_function)}.match({_enum_pattern_to_haxe(pattern, code, True)})"
+    )
+    for part in parts[used:]:
+        rendered += f" && {_expr_to_haxe_with_precedence(part, code, ir_function, '&&')}"
+    return rendered
+
+
+class _FunctionHeader:
+    def __init__(self, params: str, returns: Optional[str]) -> None:
+        self.params, self.returns = params, returns
+
+    def group(self, index: int) -> str:
+        return self.params if index == 1 else self.returns or ""
+
+
+def _function_header(line: str) -> Optional[_FunctionHeader]:
+    """The parameter list and return type of a rendered `function name(params): ret {` line. The
+    return type may itself contain braces (an anonymous structure)."""
+    opening = re.search(r"function [\w$]+\(", line)
+    if opening is None or not line.rstrip().endswith("{"):
+        return None
+    depth, at = 1, opening.end()
+    while at < len(line) and depth:
+        depth += {"(": 1, ")": -1}.get(line[at], 0)
+        at += 1
+    if depth:
+        return None
+    rest = line[at:].rstrip()[:-1].rstrip()
+    if rest and not rest.startswith(":"):
+        return None
+    return _FunctionHeader(line[opening.end() : at - 1], rest[1:].strip() if rest else None)
 
 
 def _split_params(text: str) -> List[str]:
@@ -4049,6 +4303,9 @@ def _closure_adapter(
         params = ", ".join(f"?{n}" if flag else n for n, flag in zip(names, optional))
         callee = f"({obj_str})" if _is_lambda_text(obj_str) else obj_str
         return f"({params}) -> {callee}({', '.join(names)})"
+    if expr.fun.findex.value in getattr(ir_function, "_return_adapters", ()):
+        getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+        return obj_str
     helpers = getattr(ir_function, "_inline_closure_bodies", None)
     entry = helpers.get(expr.fun.findex.value) if helpers else None
     if entry is None:
@@ -5490,17 +5747,29 @@ def _detect_enum_value_from_cases(stmt: "IRSwitch") -> Optional["IRExpression"]:
     return candidate
 
 
-def _enum_pattern_to_haxe(pattern: IREnumPattern, code: Bytecode) -> str:
+def _enum_pattern_to_haxe(pattern: IREnumPattern, code: Bytecode, qualified: bool = False) -> str:
     enum = cast(Enum, pattern.enum_type.resolve(code).definition)
     construct = enum.constructs[pattern.constructor_index]
     name = disasm.enum_construct_name(code, enum, pattern.constructor_index)
     if enum.name.value == 0:
         name = f"{disasm._enum_name(code, enum)}.{name}"
+    elif qualified:
+        name = f"{destaticify(disasm._enum_name(code, enum))}.{name}"
     params = []
     for index in range(len(construct.params)):
         slot = pattern.slots.get(index)
+        if isinstance(slot, IRConst):
+            literal = _expression_to_haxe(slot, code, None)
+            if (
+                slot.const_type == IRConst.ConstType.FLOAT
+                and construct.params[index].resolve(code).kind.value == Type.Kind.DYN.value
+                and re.fullmatch(r"-?\d{1,9}\.0", literal)
+            ):
+                literal = literal[:-2]  # a Dynamic payload compared with a whole number: the Int literal
+            params.append(literal)
+            continue
         params.append(
-            _enum_pattern_to_haxe(slot, code)
+            _enum_pattern_to_haxe(slot, code, qualified)
             if isinstance(slot, IREnumPattern)
             else slot.name
             if isinstance(slot, IRLocal)
@@ -6191,7 +6460,7 @@ def _collect_locals(root: IRStatement) -> Dict[str, str]:
         for slot in pattern.slots.values():
             if isinstance(slot, IRLocal):
                 pattern_locals.add(slot.name)
-            else:
+            elif isinstance(slot, IREnumPattern):
                 collect_pattern(slot)
 
     def visit(stmt: IRStatement) -> None:
@@ -7239,12 +7508,14 @@ def _class_body(
     # below consults `inlined`.
     inline_bodies: Dict[int, Tuple[List[str], str]] = {}
     optional_adapters: Dict[int, List[bool]] = {}
+    return_adapters: Set[int] = set()
     ctx_bodies: Dict[int, Tuple[List[str], str]] = {}
     inlined: Set[int] = set()
     for ir_func in static_methods + methods + list(helper_irs.values()):
         setattr(ir_func, "_inline_closure_bodies", inline_bodies)
         setattr(ir_func, "_helper_irs", helper_irs)
         setattr(ir_func, "_optional_adapters", optional_adapters)
+        setattr(ir_func, "_return_adapters", return_adapters)
         setattr(ir_func, "_inlined_closures", inlined)
         setattr(ir_func, "_ctx_closure_bodies", ctx_bodies)
     # A closure is created inside the one that encloses it and so has the higher findex; rendering
@@ -7253,6 +7524,15 @@ def _class_body(
         setattr(helper_ir, "_containing_class", ir_class)
         setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
+        helper_sig = helper_ir.func.type.resolve(code).definition
+        if isinstance(helper_sig, Fun) and helper_sig.args and helper_ir.locals:
+            first = helper_sig.args[0].resolve(code).definition
+            if isinstance(first, Enum) and first.name.value == 0:
+                setattr(helper_ir, "_ctx_param_name", helper_ir.locals[0].name)
+        # A closure nested in this one that captured the same variables is bound to them first, so
+        # that this body reads as the lambda it came from.
+        _collapse_adapter_guards(helper_ir)
+        _hoist_closure_contexts(helper_ir, ctx_bodies)
         ctx_body = _closure_context_body(helper_ir)
         if ctx_body is not None:
             ctx_bodies[findex] = ctx_body
@@ -7260,6 +7540,8 @@ def _class_body(
         optional = _optional_ref_adapter(helper_ir) if body is None else None
         if optional is not None:
             optional_adapters[findex] = optional
+        elif body is None and _void_return_adapter(helper_ir):
+            return_adapters.add(findex)
         if body is not None:
             inline_bodies[findex] = body
     for ir_func in static_methods + methods:
@@ -7271,6 +7553,7 @@ def _class_body(
                 if body is not None:
                     inline_bodies[helper_ir.func.findex.value] = body
     for ir_func in static_methods + methods:
+        _collapse_adapter_guards(ir_func)
         _hoist_closure_contexts(ir_func, ctx_bodies)
 
     # Collect natives, std functions, referenced classes and referenced enums.

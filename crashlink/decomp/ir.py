@@ -965,13 +965,13 @@ class IRTryCatch(IRStatement):
 
 
 class IREnumPattern(IRStatement):
-    """A proven constructor pattern; slots are bindings, nested patterns or wildcards."""
+    """A proven constructor pattern; slots are bindings, nested patterns, literals or wildcards."""
 
     def __init__(self, code: Bytecode, enum_type: tIndex, constructor_index: int):
         super().__init__(code)
         self.enum_type = enum_type
         self.constructor_index = constructor_index
-        self.slots: Dict[int, IRLocal | IREnumPattern] = {}
+        self.slots: Dict[int, IRLocal | IREnumPattern | IRConst] = {}
 
     def get_children(self) -> List[IRStatement]:
         return list(self.slots.values())
@@ -1708,6 +1708,9 @@ class IREnumField(IRExpression):
         self.field_type_idx = field_type
         # Only EnumField carries this operand. SetEnumField must not invent it.
         self.constructor_index = constructor_index
+        # The pattern variable a switch case binds this read to (see IREnumSwitchOptimizer): the
+        # read is spelled as that variable instead of `Type.enumParameters(e)[i]`.
+        self.binding: Optional["IRLocal"] = None
 
     def get_type(self) -> Type:
         return self.field_type_idx.resolve(self.code)
