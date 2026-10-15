@@ -369,9 +369,17 @@ def _record_cast_element_reads(
         node = pending.pop()
         if isinstance(node, IRBlock):
             continue
-        if isinstance(node, IRField) and isinstance(node.target, IRArrayAccess):
+        if isinstance(node, IRCall) and isinstance(node.target, IRArrayAccess):
+            # `arr[i](x)`: the called element's own type is the evidence `f = arr[i]; f(x)` is once the
+            # temp it was read into is inlined.
             try:
                 elem_type: Optional[Type] = node.target.get_type()
+            except Exception:
+                elem_type = None
+            _record_array_source(node.target.array, elem_type, code, global_cache)
+        if isinstance(node, IRField) and isinstance(node.target, IRArrayAccess):
+            try:
+                elem_type = node.target.get_type()
             except Exception:
                 elem_type = None
             _record_array_source(node.target.array, elem_type, code, global_cache)

@@ -1896,6 +1896,8 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
                 return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(
                     stmt.expr, temp, moved_ops
                 )
+            if isinstance(stmt.target, IRArrayAccess):
+                return self._movable_into_array_index(stmt, temp, moved_ops)
             if not isinstance(stmt.target, IRLocal) or stmt.target == temp:
                 return False
             return isinstance(stmt.expr, IRExpression) and self._movable_single_occurrence(
@@ -1907,8 +1909,71 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return self._movable_single_occurrence(stmt.value, temp, moved_ops)
         if isinstance(stmt, (IRReturn, IRThrow)):
             return self._movable_single_occurrence(stmt.value, temp, moved_ops)
+        if isinstance(stmt, IRTrace):
+            return self._movable_into_trace(stmt, temp, moved_ops)
         if isinstance(stmt, IRExpression):
             return self._movable_single_occurrence(stmt, temp, moved_ops)
+        return False
+
+    def _movable_into_array_index(self, stmt: IRAssign, temp: IRLocal, moved_ops: FrozenSet[int]) -> bool:
+        """`arr[temp] = v` with `arr` a local: a store evaluates and null-checks its array, then the
+        index, then the value. Moving `temp`'s definition into the index is exact when `arr` was
+        checked before every opcode of the definition (`arr[side(i)] = side(v)`)."""
+        target = stmt.target
+        if not (isinstance(target, IRArrayAccess) and isinstance(stmt.expr, IRExpression)):
+            return False
+        array = target.array
+        if not isinstance(array, IRLocal) or array == temp or self._is_address_taken(array):
+            return False
+        if self._count_expr_occurrences(stmt.expr, temp) != 0 or self._expr_contains_local(array, temp):
+            return False
+        if not self._movable_single_occurrence(target.index, temp, moved_ops):
+            return False
+        return array.reg_idx is not None and self._null_checked_before(array.reg_idx, moved_ops)
+
+    def _null_checked_before(self, reg: int, moved_ops: FrozenSet[int]) -> bool:
+        """True if a `NullCheck` of register `reg` precedes every opcode in `moved_ops`, with straight-line
+        code from the check to the first of them."""
+        if not moved_ops:
+            return False
+        ops = self.func.ops
+        first = min(moved_ops)
+        if first > len(ops):
+            return False
+        for idx in range(first - 1, -1, -1):
+            op = ops[idx]
+            if op.op == "NullCheck" and op.df["reg"].value == reg:
+                return True
+            # A jump or its target ends the straight line; a write to the register
+            # makes an earlier check apply to another value.
+            if op.op == "Label" or "offset" in op.df or op.op in ("Switch", "Trap"):
+                return False
+            if "dst" in op.df and op.df["dst"].value == reg:
+                return False
+        return False
+
+    def _movable_into_trace(self, stmt: IRTrace, temp: IRLocal, moved_ops: FrozenSet[int]) -> bool:
+        """`trace(msg, extras...)` evaluates its arguments left to right after `haxe.Log.trace` was
+        null-checked. Moving `temp`'s definition into the first argument that reads it is exact when
+        the check preceded every opcode of the definition."""
+        closure = next(
+            (
+                self.func.ops[idx].df["fun"].value
+                for idx in sorted(stmt.src_op_idxs, reverse=True)
+                if idx < len(self.func.ops) and self.func.ops[idx].op == "CallClosure"
+            ),
+            None,
+        )
+        if closure is None or not self._null_checked_before(closure, moved_ops):
+            return False
+        args = [stmt.msg, *stmt.extra_args]
+        if sum(self._count_expr_occurrences(arg, temp) for arg in args) != 1:
+            return False
+        for arg in args:
+            if self._expr_contains_local(arg, temp):
+                return self._first_evaluated_occurrence(arg, temp, moved_ops)
+            if _has_observable_effects(arg) or self._reads_address_taken(arg):
+                return False
         return False
 
     def _provably_loop_fresh(self, block: IRBlock, def_index: int, temp: IRLocal) -> bool:
@@ -1940,9 +2005,9 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
             return False
         # A value computed from a local this block also writes (a loop counter and its increment) is
         # a snapshot: moving it past the write needs the compensation that counted-loop recovery
-        # does not expect.
+        # does not expect. A write that comes before the definition is harmless: the value was read after it.
         read_names = self._collect_free_locals(define.expr)
-        for stmt in statements:
+        for stmt in statements[def_index + 1 :]:
             if (
                 isinstance(stmt, IRAssign)
                 and isinstance(stmt.target, IRLocal)
