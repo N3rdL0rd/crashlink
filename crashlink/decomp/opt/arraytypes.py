@@ -12,7 +12,7 @@ array (ArrayObj) instead of ArrayDyn.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
 
 if TYPE_CHECKING:
     from ..function import IRClass, IRFunction
@@ -28,6 +28,7 @@ from ..ir import (
     IRField,
     IRArrayAccess,
     IRArrayLiteral,
+    IRBoundClosure,
     IRForEachLoop,
     IRNativeArrayNew,
     _get_type_in_code,
@@ -376,6 +377,11 @@ _ELEMENT_READ_METHODS = {
     f"{cls}.{method}"
     for cls in ("hl.types.ArrayObj", "hl.types.ArrayDyn")
     for method in ("pop", "shift", "first", "last")
+}
+
+# Methods that store their last argument into the receiver array: method -> argument count.
+_ELEMENT_WRITE_METHODS = {
+    f"hl.types.ArrayObj.{method}": count for method, count in (("push", 2), ("unshift", 2), ("insert", 3))
 }
 
 
@@ -816,6 +822,78 @@ def _recover_wrapper_element_types(
         global_cache[key] = elem_type if previous in (None, elem_type) else _get_type_in_code(code, "Dyn")
 
 
+def _recover_pushed_element_types(root: IRStatement, code: Bytecode) -> None:
+    """`arr.push(v)`: v's type is the element type, when every value stored through the array's
+    name has one and the same non-erased type (a push of a subclass or of a Dynamic value would
+    leave the element type open)."""
+    stored: Dict[str, List[Optional[str]]] = {}
+    locals_by_name: Dict[str, List[IRLocal]] = {}
+    sample: Dict[str, Type] = {}
+    pending: List[IRStatement] = [root]
+    seen: Set[int] = set()
+    while pending:
+        node = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, IRLocal) and _is_erased_array(node, code):
+            locals_by_name.setdefault(node.name, []).append(node)
+        if (
+            isinstance(node, IRCall)
+            and node.call_type == IRCall.CallType.FUNC
+            and isinstance(node.target, IRConst)
+            and isinstance(node.target.value, Function)
+            and _ELEMENT_WRITE_METHODS.get(code.full_func_name(node.target.value)) == len(node.args)
+            and isinstance(_strip_cast(node.args[0]), IRLocal)
+        ):
+            array = cast(IRLocal, _strip_cast(node.args[0]))
+            written = _strip_cast(node.args[-1])
+            kinds = stored.setdefault(array.name, [])
+            try:
+                # A bound closure's own type still takes the environment it was bound to.
+                written_type: Optional[Type] = (
+                    None if isinstance(written, IRBoundClosure) else written.get_type()
+                )
+            except Exception:
+                written_type = None
+            if written_type is None or _is_uninformative(written_type, code):
+                kinds.append(None)
+            else:
+                kinds.append(disasm._haxe_annotation(code, written_type))
+                sample.setdefault(array.name, written_type)
+        pending.extend(node.get_children())
+    for name, kinds in stored.items():
+        if len(set(kinds)) != 1 or kinds[0] is None:
+            continue
+        for local in locals_by_name.get(name, []):
+            if local.array_elem_type is None:
+                local.array_elem_type = sample[name]
+
+
+def _share_same_named_elements(root: IRStatement, code: Bytecode) -> None:
+    """One source variable can lift to several locals (a register reused, a split); they share one
+    declaration, so an element type any of them recovered holds for the ones without evidence."""
+    by_name: Dict[str, List[IRLocal]] = {}
+    pending: List[IRStatement] = [root]
+    seen: Set[int] = set()
+    while pending:
+        node = pending.pop()
+        if id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, IRLocal) and _is_erased_array(node, code):
+            by_name.setdefault(node.name, []).append(node)
+        pending.extend(node.get_children())
+    for group in by_name.values():
+        known = {id(local.array_elem_type): local.array_elem_type for local in group if local.array_elem_type}
+        if len(known) != 1:
+            continue
+        elem = next(iter(known.values()))
+        for local in group:
+            if local.array_elem_type is None:
+                local.array_elem_type = elem
+
+
 def recover_array_element_types(ir_class: "IRClass") -> None:
     """Recover Array<T> element types for fields, params, and locals of an IRClass."""
     code = ir_class.code
@@ -829,6 +907,8 @@ def recover_array_element_types(ir_class: "IRClass") -> None:
         visited: Set[int] = set()
         _walk_block(ir_func.block, code, visited, global_cache)
         _recover_wrapper_element_types(ir_func.block, code, global_cache)
+        _recover_pushed_element_types(ir_func.block, code)
+        _share_same_named_elements(ir_func.block, code)
 
     name_to_irfunc: Dict[str, "IRFunction"] = {}
     findex_to_irfunc: Dict[int, "IRFunction"] = {}

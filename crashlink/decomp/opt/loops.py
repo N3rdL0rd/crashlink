@@ -126,6 +126,7 @@ class IRLoopRerollOptimizer(TraversingIROptimizer):
         new_body = IRBlock(self.func.code)
         new_body.statements = list(body)
         loop = IRForEachLoop(self.func.code, elem_local, array_literal, new_body)
+        loop.rerolled = True
         # Only the first iteration's header+body statements survive as objects
         # (reused for new_body above, keeping their own src_op_idxs intact);
         # every other iteration's header/body copy is discarded here, so adopt

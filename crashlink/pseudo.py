@@ -834,6 +834,16 @@ def _spell_dynamic_cast(expr: IRExpression, text: str, code: Bytecode) -> str:
     return f"(cast {operand} : {annotation})"
 
 
+def _ascribe_literal_for_dynamic(arg: IRExpression, rendered: str, code: Bytecode) -> str:
+    """An array literal handed to a Dynamic parameter: Haxe types the literal from that expected
+    type (an `Array<Dynamic>`), so it has to be ascribed the element type the bytecode records."""
+    if isinstance(arg, IRArrayLiteral) and arg.elements and _array_literal_ascription(arg, code) is None:
+        annotation = _literal_type_annotation(arg, code)
+        if annotation is not None:
+            return f"({rendered} : {annotation})"
+    return rendered
+
+
 def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], skip: int = 0) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
@@ -869,6 +879,7 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], 
     for i, arg in enumerate(call_args):
         if not isinstance(params[i], Dyn):
             continue
+        rendered[i] = _ascribe_literal_for_dynamic(arg, rendered[i], code)
         annotation = _checked_dynamic_cast(arg, code)
         if annotation is None:
             continue
@@ -1563,10 +1574,13 @@ def _expression_to_haxe(
         adapted = _closure_adapter(expr, obj_str, code, ir_function)
         if adapted is not None:
             return adapted
-        inline = _inline_closure(expr, obj_str, len(extra_args), code, ir_function)
+        # A lambda reads its captured local when it runs; the closure bound the value when it was
+        # made, so a later write to the local needs the `bind` form (a lambda would box the variable).
+        stale = _written_after(expr, ir_function)
+        inline = None if stale else _inline_closure(expr, obj_str, len(extra_args), code, ir_function)
         if inline is not None:
             return inline
-        block = _inline_block_closure(expr, obj_str, len(extra_args), code, ir_function)
+        block = None if stale else _inline_block_closure(expr, obj_str, len(extra_args), code, ir_function)
         if block is not None:
             return block
         forwarded = _forwarded_bind(expr, obj_str, code, ir_function)
@@ -2022,7 +2036,15 @@ def _expression_to_haxe(
             # pattern, so leave it as `new Array<Dynamic>()`.
             return "new Array()"
         else:
-            args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
+            ctor_args = [_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args]
+            ctor_owner = expr.get_type().definition
+            ctor = _find_constructor(code, ctor_owner) if isinstance(ctor_owner, Obj) else None
+            ctor_sig = ctor.type.resolve(code).definition if ctor is not None else None
+            if isinstance(ctor_sig, Fun) and len(ctor_sig.args) == len(expr.constructor_args) + 1:
+                for i, a in enumerate(expr.constructor_args):
+                    if isinstance(ctor_sig.args[i + 1].resolve(code).definition, Dyn):
+                        ctor_args[i] = _ascribe_literal_for_dynamic(a, ctor_args[i], code)
+            args_str = ", ".join(ctor_args)
             rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}{disasm.generic_arguments(code, expr.get_type())}({args_str})"
             owner = expr.get_type().definition
             # A private constructor of a std class (an inlined `JsonParser.parse`).
@@ -3135,6 +3157,11 @@ def _generate_statements(
                 # Haxe won't iterate Dynamic, but a Dynamic value checks as any type.
                 elem_type = disasm._haxe_annotation(code, stmt.elem.get_type())
                 array_str = f"({array_str} : Array<{elem_type}>)"
+            if isinstance(source, IRArrayLiteral) and not stmt.rerolled:
+                # Haxe unrolls `for (x in [1, 2, 3])` itself; a loop that survived in the
+                # bytecode iterated a temp (an inlined `[1, 2, 3].map(f)`), so bind one.
+                output_lines.append(f"{indent}var {elem_str}_src = {array_str};")
+                array_str = f"{elem_str}_src"
             output_lines.append(f"{indent}for ({elem_str} in {array_str}) {{")
             body_subs = render_subs.copy()
             output_lines.extend(
@@ -3498,8 +3525,21 @@ def _inline_closure(
     params, body = entry
     # The environment reaches the lambda by closing over the very same local;
     # any other binding expression would capture a copy.
-    if not params or params[0] != obj_str or len(params) - 1 != extra_arg_count:
+    if not params or len(params) - 1 != extra_arg_count:
         return None
+    if params[0] != obj_str:
+        # The captured local is named differently here than in the closure (a shadowing
+        # `var r` became `r1`): the lambda closes over the same local under its new name.
+        old = params[0]
+        if (
+            not (old.isidentifier() and obj_str.isidentifier())
+            or obj_str == "this"
+            or old in params[1:]
+            or obj_str in params
+            or re.search(rf"\b{re.escape(obj_str)}\b|\bvar\s+{re.escape(old)}\b", body)
+        ):
+            return None
+        body = re.sub(rf"(?<![\w.]){re.escape(old)}\b", obj_str, body)
     getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
     return f"({', '.join(params[1:])}) -> {body}"
 
@@ -3562,6 +3602,20 @@ def _closure_block_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str]
     body = [line[base:] if line.startswith(" " * base) else line.lstrip() for line in lines[open_at + 1 : -1]]
     indented = "\n".join(("    " + line) if line else line for line in body)
     return declared, "{\n" + indented + "\n}"
+
+
+def _written_after(expr: "IRBoundClosure", ir_function: Optional[IRFunction]) -> bool:
+    """Whether the local `expr` binds is assigned after `expr` in the function."""
+    if ir_function is None or not isinstance(expr.obj, IRLocal):
+        return False
+    seen = False
+    for node in _walk_ir(ir_function.block):
+        if node is expr:
+            seen = True
+        elif seen and isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
+            if node.target.name == expr.obj.name:
+                return True
+    return False
 
 
 def _walk_ir(node: Optional[IRStatement]) -> Iterator[IRStatement]:
