@@ -97,3 +97,23 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_integer_text_in_a_catch_handler_folds_back(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function throwInt(i:Int) {
+        return try {
+            throw i;
+        } catch (i:Int) {
+            "ok:" + i;
+        }
+    }
+    static function main() {
+        Sys.println(throwInt(12));
+    }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "__alloc__" not in text
+    assert _same(original, recompiled, "$Main.throwInt")

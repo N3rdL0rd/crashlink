@@ -246,8 +246,24 @@ class _ScopedLocalLifetime:
             if node is block:
                 found = True
                 return not hazardous and dead(block.statements[index + 1 :] + continuation)
+            if isinstance(node, IRTryCatch):
+                # The guarded body can be left for a handler mid-way, which then runs on to what
+                # follows: that is a hazard only if either reads `local`. A handler itself runs
+                # after the transfer, so what it does is no hazard of this statement.
+                handled = any(
+                    self.reads(part, local)
+                    for part in (
+                        node.catch_block,
+                        *(handler for _, handler in node.extra_catches),
+                        *continuation,
+                    )
+                )
+                return all(
+                    visit(child, continuation, hazardous or (handled and child is node.try_block))
+                    for child in node.get_children()
+                )
             hazardous = hazardous or isinstance(
-                node, (IRTryCatch, IRPrimitiveLoop, IRWhileLoop, IRForEachLoop, IRIntRangeLoop)
+                node, (IRPrimitiveLoop, IRWhileLoop, IRForEachLoop, IRIntRangeLoop)
             )
             if isinstance(node, IRBlock):
                 return all(
