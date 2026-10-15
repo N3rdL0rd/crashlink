@@ -89,6 +89,39 @@ class Main {
     assert _same_signature(original, recompiled, "Main.test")
 
 
+def test_closure_body_locals_do_not_hide_captured_variables(tmp_path: Path) -> None:
+    # The closure's own temporaries and the captured variables share register names; inlined as a
+    # lambda, a declaration in the body must not shadow the variable it is meant to read.
+    source = """
+private class Point {
+    public var x:Float = 1;
+    public var y:Float = 2;
+    extern inline public function new() {}
+}
+
+class Main {
+    public function new() {}
+
+    function test() {
+        var pt = new Point();
+        function closure() {
+            pt.x = pt.x + pt.y;
+        }
+        closure();
+        Sys.println(pt.x);
+        Sys.println(pt.y);
+    }
+
+    static function main() {
+        new Main().test();
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert "__ClosureCtx" not in files["src/Main.hx"]
+    assert expected == actual
+
+
 def test_enum_parameter_built_from_a_structure_field_keeps_the_array_element_type(tmp_path: Path) -> None:
     # `Album(d.tracks)`: no `alloc_array` builds the array, it comes out of the structure's field,
     # whose element type the other functions' literals give. `Array<Dynamic>` would be an ArrayDyn.
@@ -114,3 +147,25 @@ class Main {
     files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
     assert expected == actual
     assert _same_signature(original, recompiled, "Main.kind")
+
+
+def test_closure_returning_a_structure_is_inlined_with_its_return_type(tmp_path: Path) -> None:
+    # The lifted helper's header ends in `{ var then: ... } {`: the parameter and return type
+    # have to be told apart from the body's brace, or the closure stays a `.bind` of a helper.
+    source = """
+class Main {
+    static function main() {
+        var k = [];
+        var f = function() {
+            k.push(1);
+            return {then: function(x) k.push(x)};
+        }
+        f().then(2);
+        Sys.println(k.length);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert ".bind(" not in files["src/Main.hx"]
+    assert expected == actual
+    assert _same_signature(original, recompiled, "Main.main")

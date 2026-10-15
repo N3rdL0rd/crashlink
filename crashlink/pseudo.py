@@ -1527,6 +1527,7 @@ def _expression_to_haxe(
                 getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
                 captured = [_expression_to_haxe(c, code, ir_function) for c in expr.captures]
                 params, body = ctx_entry
+                body = _unshadow_captures(body, captured)
                 body = re.sub(_CTX_MARK + r"(\d+)" + _CTX_MARK, lambda m: captured[int(m.group(1))], body)
                 return f"({', '.join(params[1:])}) -> {body}"
         # The function is the head of a `.bind`, so it takes the environment as its first parameter and
@@ -3488,7 +3489,7 @@ def _closure_block_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str]
     )
     if open_at is None or not lines[-1].strip() == "}":
         return None
-    header = re.search(r"function [\w$]+\((.*)\)(?:: ([^{]*))? \{\s*$", lines[open_at])
+    header = _function_header(lines[open_at])
     if header is None:
         return None
     parts = [part.strip() for part in _split_params(header.group(1))]
@@ -3513,7 +3514,22 @@ def _walk_ir(node: Optional[IRStatement]) -> Iterator[IRStatement]:
             yield from _walk_ir(child)
 
 
-def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: List[IRLocal]) -> bool:
+def _is_capture_variable(value: IRExpression, ir_func: IRFunction) -> bool:
+    """Whether a capture-context argument is a variable the source named: a local, or a read of
+    the enclosing closure's own context (a variable it captured itself). A constant or any other
+    computation is not captured by a lambda: it comes from a `.bind` argument instead."""
+    if isinstance(value, IRLocal):
+        return True
+    ctx_param = getattr(ir_func, "_ctx_param_name", None)
+    return (
+        isinstance(value, IREnumField)
+        and isinstance(value.value, IRLocal)
+        and value.value.name == ctx_param
+        and value.field_name.startswith("param")
+    )
+
+
+def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: List[IRExpression]) -> bool:
     """Whether every write to a captured variable runs before `block.statements[idx]` on every path to it."""
 
     def ancestry(node: IRBlock) -> Optional[List[Tuple[IRBlock, int]]]:
@@ -3531,20 +3547,39 @@ def _captures_stable(ir_func: IRFunction, block: IRBlock, idx: int, captured: Li
     if path is None:
         return False
     settled = {id(s) for owner, at in path for s in owner.statements[:at]}
+    variables = [c for c in captured if isinstance(c, IRLocal)]
     for node in _walk_ir(ir_func.block):
-        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target in captured:
+        if isinstance(node, IRAssign) and isinstance(node.target, IRLocal) and node.target in variables:
             if id(node) not in settled:
                 return False
     return True
 
 
-def _shadows_captures(params: List[str], body: str, captured: List[IRLocal]) -> bool:
-    """Whether a closure's parameters or body declares a local with the name of a captured
-    variable. Such a name would hide the capture inside the lambda."""
-    names = {c.name for c in captured}
-    if names & {p.lstrip("?").split(" = ")[0] for p in params[1:]}:
-        return True
-    return any(re.search(rf"\bvar {re.escape(n)}\b", body) for n in names)
+def _parameters_shadow(params: List[str], captured: List[IRExpression]) -> bool:
+    """Whether a lambda's own parameter has the name of a captured variable. The body names both
+    the same way, so the two can no longer be told apart."""
+    names = {c.name for c in captured if isinstance(c, IRLocal)}
+    return bool(names & {p.lstrip("?").split(" = ")[0].split(":")[0].strip() for p in params[1:]})
+
+
+def _unshadow_captures(body: str, captured: List[str]) -> str:
+    """Rename what a lambda body declares (locals, loop and catch variables) when the name is also
+    used by a captured expression: inside the lambda the declaration would hide the captured
+    variable it was meant to read."""
+    declared = {m for m in re.findall(r"\bvar (\w+)", body)}
+    declared.update(m for pair in re.findall(r"\bfor \((\w+)(?: => (\w+))? in", body) for m in pair if m)
+    declared.update(re.findall(r"\bcatch \((\w+)", body))
+    used = {w for text in captured for w in re.findall(r"[A-Za-z_]\w*", text)}
+    taken = used | set(re.findall(r"[A-Za-z_]\w*", body)) | declared
+    for name in sorted(declared & used):
+        fresh, n = f"{name}_", 1
+        while fresh in taken:
+            n += 1
+            fresh = f"{name}_{n}"
+        taken.add(fresh)
+        pattern = re.compile(rf"(?<![\w.]){re.escape(name)}(?!\w)")
+        body = disasm.outside_literals(body, lambda chunk: pattern.sub(fresh, chunk))
+    return body
 
 
 def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[List[str], str]]) -> None:
@@ -3560,14 +3595,14 @@ def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[L
                     and isinstance(node.obj, IREnumConstruct)
                     and isinstance(node.obj.get_type().definition, Enum)
                     and cast(Enum, node.obj.get_type().definition).name.value == 0
-                    and all(isinstance(a, IRLocal) for a in node.obj.args)
+                    and all(_is_capture_variable(a, ir_func) for a in node.obj.args)
                 ):
                     continue
-                captured = cast(List[IRLocal], node.obj.args)
+                captured = cast(List[IRExpression], node.obj.args)
                 params, body = ctx_bodies[node.fun.findex.value]
                 if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
                     continue
-                if _shadows_captures(params, body, captured):
+                if _parameters_shadow(params, captured):
                     continue
                 if _captures_stable(ir_func, block, idx, captured):
                     node.captures = list(captured)
@@ -3593,7 +3628,7 @@ def _hoist_closure_contexts(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[Lis
                     and isinstance(stmt.expr, IREnumConstruct)
                     and isinstance(stmt.expr.get_type().definition, Enum)
                     and cast(Enum, stmt.expr.get_type().definition).name.value == 0
-                    and all(isinstance(a, IRLocal) for a in stmt.expr.args)
+                    and all(_is_capture_variable(a, ir_func) for a in stmt.expr.args)
                 ):
                     continue
                 if _hoist_one_context(ir_func, block, idx, ctx_bodies):
@@ -3608,7 +3643,7 @@ def _hoist_one_context(
 ) -> bool:
     stmt = cast(IRAssign, block.statements[idx])
     ctx = cast(IRLocal, stmt.target)
-    captured = cast(List[IRLocal], cast(IREnumConstruct, stmt.expr).args)
+    captured = cast(List[IRExpression], cast(IREnumConstruct, stmt.expr).args)
     closures: List[IRBoundClosure] = []
     last_use = -1
     for j, later in enumerate(block.statements):
@@ -3661,8 +3696,8 @@ def _hoist_one_context(
         params, body = entry
         if any(int(m) >= len(captured) for m in re.findall(_CTX_MARK + r"(\d+)" + _CTX_MARK, body)):
             return False
-        if _shadows_captures(params, body, captured):
-            return False  # a parameter or a local of the body would shadow a captured variable
+        if _parameters_shadow(params, captured):
+            return False
     for closure in closures:
         closure.captures = list(captured)
     del block.statements[idx]
@@ -3763,7 +3798,7 @@ def _inline_block_closure(
     )
     if open_at is None or not lines[-1].strip() == "}":
         return None
-    header = re.search(r"function [\w$]+\((.*)\)(?:: ([^{]*))? \{\s*$", lines[open_at])
+    header = _function_header(lines[open_at])
     if header is None:
         return None
     parts = [part.strip() for part in _split_params(header.group(1))]
@@ -3860,6 +3895,32 @@ def _enum_match_prefix(expr: IRBoolExpr, code: Bytecode, ir_function: Optional[I
     for part in parts[used:]:
         rendered += f" && {_expr_to_haxe_with_precedence(part, code, ir_function, '&&')}"
     return rendered
+
+
+class _FunctionHeader:
+    def __init__(self, params: str, returns: Optional[str]) -> None:
+        self.params, self.returns = params, returns
+
+    def group(self, index: int) -> Optional[str]:
+        return self.params if index == 1 else self.returns
+
+
+def _function_header(line: str) -> Optional[_FunctionHeader]:
+    """The parameter list and return type of a rendered `function name(params): ret {` line. The
+    return type may itself contain braces (an anonymous structure)."""
+    opening = re.search(r"function [\w$]+\(", line)
+    if opening is None or not line.rstrip().endswith("{"):
+        return None
+    depth, at = 1, opening.end()
+    while at < len(line) and depth:
+        depth += {"(": 1, ")": -1}.get(line[at], 0)
+        at += 1
+    if depth:
+        return None
+    rest = line[at:].rstrip()[:-1].rstrip()
+    if rest and not rest.startswith(":"):
+        return None
+    return _FunctionHeader(line[opening.end() : at - 1], rest[1:].strip() if rest else None)
 
 
 def _split_params(text: str) -> List[str]:
@@ -7178,6 +7239,14 @@ def _class_body(
         setattr(helper_ir, "_containing_class", ir_class)
         setattr(helper_ir, "_force_static", True)
         setattr(helper_ir, "_anon_name", f"__anon_{findex}")
+        helper_sig = helper_ir.func.type.resolve(code).definition
+        if isinstance(helper_sig, Fun) and helper_sig.args and helper_ir.locals:
+            first = helper_sig.args[0].resolve(code).definition
+            if isinstance(first, Enum) and first.name.value == 0:
+                setattr(helper_ir, "_ctx_param_name", helper_ir.locals[0].name)
+        # A closure nested in this one that captured the same variables is bound to them first, so
+        # that this body reads as the lambda it came from.
+        _hoist_closure_contexts(helper_ir, ctx_bodies)
         ctx_body = _closure_context_body(helper_ir)
         if ctx_body is not None:
             ctx_bodies[findex] = ctx_body
