@@ -108,3 +108,19 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "Array<Dynamic>" not in text
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_bound_parameter_that_is_assigned_afterwards_stays_a_bind(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function recurse(i:Int, param:String) {
+        if (i > 0) param += iter(i, recurse.bind(_, param));
+        return param;
+    }
+    static function iter(v:Int, f:Int->String) return f(v - 1);
+    static function main() { Sys.println(recurse(3, "a")); }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "bind(" in text
+    assert _same(original, recompiled, "$Main.recurse")

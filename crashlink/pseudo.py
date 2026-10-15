@@ -1540,10 +1540,13 @@ def _expression_to_haxe(
         adapted = _closure_adapter(expr, obj_str, code, ir_function)
         if adapted is not None:
             return adapted
-        inline = _inline_closure(expr, obj_str, len(extra_args), code, ir_function)
+        # A lambda reads its captured local when it runs; the closure bound the value when it was
+        # made, so a later write to the local needs the `bind` form (a lambda would box the variable).
+        stale = _written_after(expr, ir_function)
+        inline = None if stale else _inline_closure(expr, obj_str, len(extra_args), code, ir_function)
         if inline is not None:
             return inline
-        block = _inline_block_closure(expr, obj_str, len(extra_args), code, ir_function)
+        block = None if stale else _inline_block_closure(expr, obj_str, len(extra_args), code, ir_function)
         if block is not None:
             return block
         forwarded = _forwarded_bind(expr, obj_str, code, ir_function)
@@ -3512,6 +3515,20 @@ def _closure_block_body(helper_ir: IRFunction) -> Optional[Tuple[List[str], str]
     body = [line[base:] if line.startswith(" " * base) else line.lstrip() for line in lines[open_at + 1 : -1]]
     indented = "\n".join(("    " + line) if line else line for line in body)
     return declared, "{\n" + indented + "\n}"
+
+
+def _written_after(expr: "IRBoundClosure", ir_function: Optional[IRFunction]) -> bool:
+    """Whether the local `expr` binds is assigned after `expr` in the function."""
+    if ir_function is None or not isinstance(expr.obj, IRLocal):
+        return False
+    seen = False
+    for node in _walk_ir(ir_function.block):
+        if node is expr:
+            seen = True
+        elif seen and isinstance(node, IRAssign) and isinstance(node.target, IRLocal):
+            if node.target.name == expr.obj.name:
+                return True
+    return False
 
 
 def _walk_ir(node: Optional[IRStatement]) -> Iterator[IRStatement]:
