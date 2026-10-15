@@ -123,3 +123,16 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_enum_parameter_keeps_its_runtime_type(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function name<T>(e:Enum<T>) return Type.getEnumName(e);
+    static function main() {
+        Sys.println(name(haxe.ds.Option));
+    }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Main.name")
