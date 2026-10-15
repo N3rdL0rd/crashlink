@@ -815,6 +815,16 @@ def _spell_dynamic_cast(expr: IRExpression, text: str, code: Bytecode) -> str:
     return f"(cast {operand} : {annotation})"
 
 
+def _ascribe_literal_for_dynamic(arg: IRExpression, rendered: str, code: Bytecode) -> str:
+    """An array literal handed to a Dynamic parameter: Haxe types the literal from that expected
+    type (an `Array<Dynamic>`), so it has to be ascribed the element type the bytecode records."""
+    if isinstance(arg, IRArrayLiteral) and arg.elements and _array_literal_ascription(arg, code) is None:
+        annotation = _literal_type_annotation(arg, code)
+        if annotation is not None:
+            return f"({rendered} : {annotation})"
+    return rendered
+
+
 def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], skip: int = 0) -> List[str]:
     """Rendered arguments of a call. HL passes an optional basic argument as an
     `hl.Ref` (null when omitted); Haxe source leaves an omitted trailing one out, and
@@ -850,6 +860,7 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], 
     for i, arg in enumerate(call_args):
         if not isinstance(params[i], Dyn):
             continue
+        rendered[i] = _ascribe_literal_for_dynamic(arg, rendered[i], code)
         annotation = _checked_dynamic_cast(arg, code)
         if annotation is None:
             continue
@@ -1992,7 +2003,15 @@ def _expression_to_haxe(
             # pattern, so leave it as `new Array<Dynamic>()`.
             return "new Array()"
         else:
-            args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
+            ctor_args = [_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args]
+            ctor_owner = expr.get_type().definition
+            ctor = _find_constructor(code, ctor_owner) if isinstance(ctor_owner, Obj) else None
+            ctor_sig = ctor.type.resolve(code).definition if ctor is not None else None
+            if isinstance(ctor_sig, Fun) and len(ctor_sig.args) == len(expr.constructor_args) + 1:
+                for i, a in enumerate(expr.constructor_args):
+                    if isinstance(ctor_sig.args[i + 1].resolve(code).definition, Dyn):
+                        ctor_args[i] = _ascribe_literal_for_dynamic(a, ctor_args[i], code)
+            args_str = ", ".join(ctor_args)
             rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}{disasm.generic_arguments(code, expr.get_type())}({args_str})"
             owner = expr.get_type().definition
             # A private constructor of a std class (an inlined `JsonParser.parse`).

@@ -124,3 +124,24 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "bind(" in text
     assert _same(original, recompiled, "$Main.recurse")
+
+
+def test_array_literal_passed_to_a_dynamic_constructor_parameter_keeps_its_element_type(
+    tmp_path: Path,
+) -> None:
+    source = """
+private class Box<T> {
+    var v:T;
+    public function new(v:T) { this.v = v; }
+    public function get():T return v;
+}
+class Main {
+    static function main() {
+        var b = new Box([123]);
+        Sys.println(b.get()[0]);
+    }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert ": Array<Int>)" in text
+    assert _same(original, recompiled, "$Main.main")
