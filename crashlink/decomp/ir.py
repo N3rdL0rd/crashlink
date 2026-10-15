@@ -8,7 +8,7 @@ import threading
 import re
 import weakref
 from enum import Enum as _Enum
-from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar
+from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar, Union
 
 from ..core import (
     Bytecode,
@@ -493,7 +493,7 @@ class IRStoreExpr(IRExpression):
 class IRPostIncrement(IRExpression):
     """`target++` / `target--` used as a value: it yields what the field held and then bumps it."""
 
-    def __init__(self, code: Bytecode, target: "IRField", delta: int):
+    def __init__(self, code: Bytecode, target: Union["IRField", "IRArrayAccess"], delta: int):
         super().__init__(code)
         self.target = target
         self.delta = delta
@@ -1397,6 +1397,24 @@ class IRClassCast(IRExpression):
 
     def __repr__(self) -> str:
         return f"<IRClassCast: cast({self.value}, {self.class_ref})>"
+
+
+class IRDowncast(IRExpression):
+    """`Std.downcast(value, Class)`: the class test of `hl.BaseType.check` selecting the value or null."""
+
+    def __init__(self, code: Bytecode, value: IRExpression, class_ref: IRExpression):
+        super().__init__(code)
+        self.value = value
+        self.class_ref = class_ref
+
+    def get_type(self) -> Type:
+        return _get_type_in_code(self.code, "Dyn")
+
+    def get_children(self) -> List[IRStatement]:
+        return [self.value, self.class_ref]
+
+    def __repr__(self) -> str:
+        return f"<IRDowncast: Std.downcast({self.value}, {self.class_ref})>"
 
 
 class IRStringConvert(IRExpression):

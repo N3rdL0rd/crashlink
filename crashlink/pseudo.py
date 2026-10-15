@@ -33,7 +33,18 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, arrayelems, enumparams, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
+from . import (
+    abstracts,
+    arrayelems,
+    enumparams,
+    generics,
+    ifacenames,
+    mapargs,
+    rtti_meta,
+    hxbit,
+    hxsl,
+    typeinit,
+)
 from .classgenerics import ScopeEntry, class_generics, method_root
 from .std_types import STD_TYPES
 from .decomp import (
@@ -42,6 +53,7 @@ from .decomp import (
     IRContinue,
     IRCast,
     IRClassCast,
+    IRDowncast,
     IRNativeStub,
     IRClass,
     IRField,
@@ -1467,6 +1479,10 @@ def _expression_to_haxe(
             )
             target_str = f"(cast {target_str} : {mapargs.refine(annotation, expr.target.map_value)})"
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
+            if expr.dynamic:
+                # `var d:Dynamic = Cls; d.field`: the class object read through Dynamic.
+                class_name = _static_owner_path(code, target_type.definition, type_name, ir_function)
+                return f"({class_name} : Dynamic).{expr.field_name}"
             # A typed HL static-storage access must stay statically visible to
             # Haxe's DCE; a Dynamic alias can discard the referenced field.
             return _std_private_access(
@@ -1570,6 +1586,12 @@ def _expression_to_haxe(
 
     elif isinstance(expr, IRClassCast):
         return f"cast({_expression_to_haxe(expr.value, code, ir_function)}, {_expression_to_haxe(expr.class_ref, code, ir_function)})"
+
+    elif isinstance(expr, IRDowncast):
+        class_text = _expression_to_haxe(expr.class_ref, code, ir_function)
+        if class_text == "hl.types.ArrayBase":
+            class_text = "Array"  # the class object `Array` reaches HashLink as its base class
+        return f"Std.downcast({_expression_to_haxe(expr.value, code, ir_function)}, {class_text})"
 
     elif isinstance(expr, IRPostIncrement):
         target_text = _expression_to_haxe(expr.target, code, ir_function)
@@ -2044,6 +2066,22 @@ def _expression_to_haxe(
             else:
                 target_str = _expression_to_haxe(field.target, code, ir_function)
             return f"(({target_str} : Dynamic<{disasm._haxe_annotation(code, expr.get_type())}>).{field.field_name})"
+        widened = expr.expr
+        if (
+            isinstance(widened, IRCast)
+            and not widened.untyped
+            and not expr.unsafe
+            and not isinstance(widened.expr, IRConst)
+            and widened.get_type().kind.value == Type.Kind.F64.value
+            and widened.expr.get_type().kind.value == Type.Kind.I32.value
+            and (
+                expr.get_type().kind.value == Type.Kind.DYN.value
+                or isinstance(expr.get_type().definition, Null)
+            )
+        ):
+            # An Int widened to a Float and boxed at once: only the ascription makes the Int a Float,
+            # a bare Int would be boxed as one.
+            return f"({_expression_to_haxe(widened.expr, code, ir_function)} : Float)"
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         boxed = expr.expr
         if (
@@ -4038,6 +4076,12 @@ def _capture_box_uses(
                 return
             walk(target, True)
             walk(node.expr)
+            return
+        if isinstance(node, IRPostIncrement) and element(node.target):
+            inside = count(node)
+            total += inside
+            accounted += inside
+            writes += 1
             return
         if element(node):
             inside = count(node)

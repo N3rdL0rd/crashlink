@@ -121,7 +121,7 @@ from .opt.strings import (
     IRStringConcatFolder,
 )
 from .opt.chains import IRChainAssignFolder
-from .opt.castcheck import IRCastCheckRecovery
+from .opt.castcheck import IRCastCheckRecovery, IRDowncastRecovery
 from .opt.postinc import IRPostIncrementRecovery
 from .opt.stringalloc import IRStringAllocInliner
 from .opt.pos import IRPosInfosFolder
@@ -412,6 +412,7 @@ class IRFunction:
                 IRTempAssignmentInliner(self, aggressive=False, move_into_reads=True),
                 IRDeadTempEliminator(self),
                 IRDeadCodeEliminator(self),
+                IRDowncastRecovery(self),
                 IRBoolMaterializationCollapser(self),
                 IRDeadStoreEliminator(self),
                 IRDeadAssignmentEliminator(self),
