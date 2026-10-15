@@ -206,3 +206,57 @@ class Main {
 }
 """
     _check(tmp_path, source, "Main.main")
+
+
+def test_array_read_through_dynamic_keeps_its_element_type(tmp_path: Path) -> None:
+    # `a[0]` on a Dynamic where a `String` is wanted reads an `ArrayObj`: declared `Array<Dynamic>`
+    # (an ArrayDyn) the local would be cast to the wrong array class.
+    source = """
+class Main {
+    static function eq<T>(a:T, b:T) Sys.println(a == b);
+
+    static function main() {
+        var x = {"k": ["CheckBase", "UnusedImportCheck"]};
+        var a = Reflect.field(x, "k");
+        eq("CheckBase", a[0]);
+        eq("UnusedImportCheck", a[1]);
+    }
+}
+"""
+    _check(tmp_path, source, "Main.main")
+
+
+def test_array_of_arrays_keeps_the_inner_element_type(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function main() {
+        var a = [["a"], ["b"]];
+        var x = a.shift();
+        a[0].push(x[0]);
+        Sys.println(a[0].length);
+        Sys.println(a[0][1]);
+    }
+}
+"""
+    _check(tmp_path, source, "Main.main")
+
+
+def test_array_converted_to_an_object_array_is_a_cast(tmp_path: Path) -> None:
+    # An abstract's `Array<K>` is erased to an ArrayDyn; the caller's `Array<String>` casts it.
+    source = """
+abstract A<K>(haxe.DynamicAccess<Int>) {
+    public function f():Array<K> return [];
+}
+
+class Main {
+    static function eq<T>(a:T, b:T) Sys.println(a == b);
+
+    static function main() {
+        var a:A<String> = null;
+        var k = a.f();
+        eq(k[0], null);
+        Sys.println(k.length);
+    }
+}
+"""
+    _check(tmp_path, source, "Main.main")

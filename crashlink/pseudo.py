@@ -32,7 +32,7 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
+from . import abstracts, arrayelems, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
 from .classgenerics import ScopeEntry, class_generics, method_root
 from .std_types import STD_TYPES
 from .decomp import (
@@ -2152,6 +2152,9 @@ def _expression_to_haxe(
             # erased `Iterable<A>` of a generic parameter): the context only gives the last
             # one, so the first is ascribed or the class would convert to the last directly.
             return f"({inner} : {disasm._haxe_annotation(code, expr.expr.get_type())})"
+        if target_name == "hl.types.ArrayObj" and source_name == "hl.types.ArrayDyn":
+            # The one conversion between the two a `T` array makes: it is a cast, never implicit.
+            return f"(cast ({inner}))"
         if target_name in _ARRAY_WRAPPERS and source_name in _ARRAY_WRAPPERS:
             # ArrayObj/ArrayDyn are one Haxe `Array<T>`; the element type comes from the context,
             # and `(cast x : Array<Dynamic>)` would pin it to Dynamic.
@@ -4459,6 +4462,9 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             node = ("r", func_core.findex.value, local.reg_idx)
             local_types[local.name] = mapargs.refine(local_types[local.name], mapargs.value_type(code, node))
             map_values.setdefault(local.name, mapargs.value_type(code, node))
+            local_types[local.name] = arrayelems.refine(
+                local_types[local.name], arrayelems.element_type(code, func_core, local.reg_idx)
+            )
             regs = func_core.regs
             if local.reg_idx >= len(regs) or regs[local.reg_idx].resolve(code) is not local.get_type():
                 interfaces.setdefault(local.name, set()).add(None)
