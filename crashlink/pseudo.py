@@ -3946,6 +3946,17 @@ def _closure_adapter(
     params, body = entry
     if not params:
         return None
+    captured = expr.obj.get_type().definition
+    helper_type = expr.fun.type.resolve(code).definition
+    if (
+        isinstance(captured, Fun)
+        and isinstance(helper_type, Fun)
+        and [disasm.type_name(code, a.resolve(code)) for a in captured.args]
+        == [disasm.type_name(code, a.resolve(code)) for a in helper_type.args[1:]]
+        and disasm.type_name(code, captured.ret.resolve(code))
+        == disasm.type_name(code, helper_type.ret.resolve(code))
+    ):
+        return None  # nothing is converted: the source wrote the lambda that calls it
     # A Dynamic argument handed on as a basic type is converted by the adapter itself.
     forwarded = ", ".join(
         rf"(?:{re.escape(p)}|cast\({re.escape(p)}, (?:Int|Float|Bool)\))" for p in params[1:]

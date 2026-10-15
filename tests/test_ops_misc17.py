@@ -136,3 +136,21 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.name")
+
+
+def test_lambda_that_only_calls_a_captured_function_is_kept(tmp_path: Path) -> None:
+    source = """
+class Base<T> { public var dispatch:T; public function new() {} }
+class Signal<T> extends Base<T->Void> {
+    public function new(handler:T->Void) { super(); this.dispatch = value -> handler(value); }
+}
+class Main {
+    static function main() {
+        var foo = 0;
+        new Signal<Int>(i -> foo = i).dispatch(1);
+        Sys.println(foo);
+    }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Signal.__constructor__")
