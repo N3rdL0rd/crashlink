@@ -119,3 +119,20 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "IntMap<Dynamic>" not in text
     assert _same(original, recompiled, "$Main.test")
+
+
+def test_int_widened_to_float_and_boxed_keeps_the_float_ascription(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static var d = 1.665;
+    static function run(t:Dynamic) { Sys.println(t); }
+    static function test() {
+        run((Std.int(d) : Float));
+    }
+    static function main() { test(); }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert ": Float)" in text
+    assert _same(original, recompiled, "$Main.test")
+

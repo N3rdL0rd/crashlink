@@ -2064,6 +2064,22 @@ def _expression_to_haxe(
             else:
                 target_str = _expression_to_haxe(field.target, code, ir_function)
             return f"(({target_str} : Dynamic<{disasm._haxe_annotation(code, expr.get_type())}>).{field.field_name})"
+        widened = expr.expr
+        if (
+            isinstance(widened, IRCast)
+            and not widened.untyped
+            and not expr.unsafe
+            and not isinstance(widened.expr, IRConst)
+            and widened.get_type().kind.value == Type.Kind.F64.value
+            and widened.expr.get_type().kind.value == Type.Kind.I32.value
+            and (
+                expr.get_type().kind.value == Type.Kind.DYN.value
+                or isinstance(expr.get_type().definition, Null)
+            )
+        ):
+            # An Int widened to a Float and boxed at once: only the ascription makes the Int a Float,
+            # a bare Int would be boxed as one.
+            return f"({_expression_to_haxe(widened.expr, code, ir_function)} : Float)"
         inner = _expression_to_haxe(expr.expr, code, ir_function)
         boxed = expr.expr
         if (
