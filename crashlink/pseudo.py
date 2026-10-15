@@ -1987,7 +1987,7 @@ def _expression_to_haxe(
             # from context (e.g. the local/param's declared Array<T>).
             # ArrayDyn (`new Array<Dynamic>()`) uses a different allocation
             # pattern, so leave it as `new Array<Dynamic>()`.
-            return "[]"
+            return "new Array()"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
             rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}{disasm.generic_arguments(code, expr.get_type())}({args_str})"

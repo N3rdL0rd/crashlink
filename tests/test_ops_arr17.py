@@ -91,3 +91,20 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "captured1" in text
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_new_array_of_closures_keeps_its_element_type_and_allocation(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function main() {
+        var a = new Array<Void->Int>();
+        a.push(function() return 1);
+        var c = new Array<String>();
+        c.push("x");
+        Sys.println(a.length + c.length);
+    }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "Array<Dynamic>" not in text
+    assert _same(original, recompiled, "$Main.main")
