@@ -3842,6 +3842,8 @@ def _collapse_adapter_guards(ir_func: IRFunction) -> None:
                 and call_branch.expr.obj == stmt.condition.left
             ):
                 continue
+            if call_branch.expr.fun.findex.value not in getattr(ir_func, "_return_adapters", ()):
+                continue  # an adapter of argument types was written as a plain copy of the function
             function = _expression_to_haxe(stmt.condition.left, code, ir_func)
             if _closure_adapter(call_branch.expr, function, code, ir_func) != function:
                 continue

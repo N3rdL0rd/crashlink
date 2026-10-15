@@ -250,3 +250,23 @@ class Main {
     assert "Type.enumParameters" not in files["src/Main.hx"]
     assert expected == actual
     assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_function_copy_for_argument_types_is_not_folded_into_its_call(tmp_path: Path) -> None:
+    # A generic local function called as `(Int, Int)` is copied by the compiler; the copy is kept.
+    source = """
+class Main {
+    static function main() {
+        var code = 0;
+        function assertEquals<T>(expected:T, actual:T) {
+            if (expected != actual) code++;
+        }
+        var f = () -> assertEquals(1, 1);
+        f();
+        Sys.println(code);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert expected == actual
+    assert _same_signature(original, recompiled, "Main.main")
