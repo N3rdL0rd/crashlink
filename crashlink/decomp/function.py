@@ -572,10 +572,16 @@ class IRFunction:
         return self.locals[reg_idx]
 
     def _split_local(
-        self, reg_idx: int, name: str, defining_op_idx: Optional[int] = None, avoid_same_reg: bool = False
+        self,
+        reg_idx: int,
+        name: str,
+        defining_op_idx: Optional[int] = None,
+        avoid_same_reg: bool = False,
+        fresh: bool = False,
     ) -> IRLocal:
         """Create a new IRLocal for a register with a specific name (SSA-esque split).
-        avoid_same_reg also forces a name distinct from the register's current local."""
+        avoid_same_reg also forces a name distinct from the register's current local;
+        fresh forces one distinct from every earlier local of the register."""
         reg_type = self.func.regs[reg_idx]
         new_type = reg_type.resolve(self.code)
         # Avoid name collisions only with a different register of a different
@@ -594,6 +600,8 @@ class IRFunction:
         }
         if avoid_same_reg:
             existing_names.add(self.locals[reg_idx].name)
+        if fresh:
+            existing_names.update(loc.name for loc in self.all_locals if loc.reg_idx == reg_idx)
         if defining_op_idx is not None:
             # A same-named variable in another register still read after this
             # definition is a distinct live value, not the same source variable.
@@ -632,10 +640,19 @@ class IRFunction:
         return False
 
     def _captured_before(self, reg: int, op_idx: int, since: int = 0) -> bool:
-        """True if `reg` is bound as the captured value of an anonymous closure in [since, op_idx)."""
+        """True if `reg` is captured by value by an anonymous closure in [since, op_idx): bound as the
+        closure's receiver, or stored into the capture-context enum the closure is bound to."""
+        in_context: Dict[int, Set[int]] = {}
         for idx in range(since, op_idx):
             op = self.ops[idx]
-            if op.op == "InstanceClosure" and op.df["obj"].value == reg:
+            if op.op == "EnumAlloc":
+                in_context[op.df["dst"].value] = set()
+            elif op.op == "SetEnumField" and op.df["value"].value in in_context:
+                in_context[op.df["value"].value].add(op.df["src"].value)
+            elif op.op == "InstanceClosure":
+                receiver = op.df["obj"].value
+                if receiver != reg and reg not in in_context.get(receiver, ()):
+                    continue
                 fun = op.df["fun"].resolve(self.code)
                 if isinstance(fun, Function) and self.code.partial_func_name(fun) in (None, "<none>"):
                     return True
@@ -931,11 +948,12 @@ class IRFunction:
         if op_idx in self._op_assigns:
             for reg_idx, name in self._op_assigns[op_idx].items():
                 current = self.locals[reg_idx]
-                if current.name != name:
+                if self._captured_before(reg_idx, op_idx, current.defining_op_idx or 0):
+                    # A closure captured the old value by value, so a write to the variable
+                    # (the same name, or its renamed form) is a new `var`.
+                    self._split_local(reg_idx, name, defining_op_idx=op_idx, avoid_same_reg=True, fresh=True)
+                elif current.name != name:
                     self._split_local(reg_idx, name, defining_op_idx=op_idx)
-                elif self._captured_before(reg_idx, op_idx, current.defining_op_idx or 0):
-                    # A closure captured the old value by value, so a same-named write is a new `var`.
-                    self._split_local(reg_idx, name, defining_op_idx=op_idx, avoid_same_reg=True)
             return
         # No debug name at this op. If it still writes a register that currently
         # holds a real (debug-sourced) name, and the write clearly doesn't derive

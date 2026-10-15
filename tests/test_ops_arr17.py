@@ -73,3 +73,21 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "var r1" in text
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_loop_unrolled_closures_over_a_captured_counter_are_distinct_variables(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function main() {
+        var callbacks = [];
+        for (i in 0...3) {
+            var captured = i;
+            callbacks.push(function() return captured);
+        }
+        for (cb in callbacks) Sys.println(cb());
+    }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "captured1" in text
+    assert _same(original, recompiled, "$Main.main")
