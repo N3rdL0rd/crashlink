@@ -32,7 +32,7 @@ from .core import (
     Null,
 )
 from . import disasm
-from . import abstracts, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
+from . import abstracts, enumparams, generics, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
 from .classgenerics import ScopeEntry, class_generics, method_root
 from .std_types import STD_TYPES
 from .decomp import (
@@ -94,7 +94,13 @@ from .decomp import (
 )
 from .decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
 from .decomp.opt.arraytypes import function_return_elem_type, recover_closure_param_elem_types
-from .decomp.opt.clean import default_arg_regs, default_arg_value, overriding_default_arg_regs
+from .decomp.opt.clean import (
+    default_arg_regs,
+    default_arg_value,
+    nullable_basic_name,
+    optional_basic_name,
+    overriding_default_arg_regs,
+)
 from .decomp.inline_calls import inline_index, is_inline_template
 
 
@@ -896,8 +902,7 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], 
     # by type; `null` is not accepted for a basic type. Only when no later argument could be
     # taken for it, i.e. none has the same type.
     def _basic(param: object) -> str:
-        inner = param.type.resolve(code) if isinstance(param, Ref) else None
-        return disasm.type_name(code, inner) if inner is not None else ""
+        return optional_basic_name(code, param)
 
     kept = []
     for i, text in enumerate(rendered):
@@ -907,7 +912,7 @@ def _call_args(expr: IRCall, code: Bytecode, ir_function: Optional[IRFunction], 
             and arg.const_type == IRConst.ConstType.NULL
             and isinstance(params[i], Ref)
             and all(
-                _basic(params[i]) != disasm.type_name(code, call_args[j].get_type())
+                _basic(params[i]) != nullable_basic_name(code, call_args[j].get_type())
                 for j in range(i + 1, len(rendered))
             )
             and all(_basic(params[i]) != _basic(params[j]) for j in range(i + 1, len(rendered)))
@@ -1694,10 +1699,15 @@ def _expression_to_haxe(
                     # Dynamic addition: the result stays Dynamic even with a String operand, so
                     # keep one side Dynamic or Haxe types `"4" + b` as String at its use.
                     left, right = expr.args
-                    left_str = _expression_to_haxe(left, code, ir_function)
-                    if left.get_type().kind.value != Type.Kind.DYN.value:
-                        left_str = f"({left_str} : Dynamic)"
-                    return f"({left_str} + {_expression_to_haxe(right, code, ir_function)})"
+                    operands = []
+                    for operand in (left, right):
+                        text = _expression_to_haxe(operand, code, ir_function)
+                        if operand.get_type().kind.value != Type.Kind.DYN.value:
+                            # A String operand beside a Dynamic one is a String concatenation; only
+                            # two Dynamic operands add through Std.__add__.
+                            text = f"({text} : Dynamic)"
+                        operands.append(text)
+                    return f"({operands[0]} + {operands[1]})"
                 rendered = _render_string_concat(expr, code, ir_function)
                 if rendered is not None:
                     return rendered
@@ -1982,12 +1992,11 @@ def _expression_to_haxe(
             # folded): an empty literal does not satisfy the structure.
             return "cast {}" if type_name != "Virtual[]" else "{}"
         elif type_name == "hl.types.ArrayObj" and not expr.constructor_args:
-            # `new ArrayObj()` is Haxe's `new Array<T>()` / `[]` for typed
-            # object arrays. Render as `[]` so Haxe infers the element type
-            # from context (e.g. the local/param's declared Array<T>).
+            # `new ArrayObj()` is Haxe's `new Array<T>()`; a literal `[]` allocates the native
+            # array and wraps it instead. The context (the local's declared Array<T>) gives T.
             # ArrayDyn (`new Array<Dynamic>()`) uses a different allocation
             # pattern, so leave it as `new Array<Dynamic>()`.
-            return "[]"
+            return "new Array()"
         else:
             args_str = ", ".join(_expression_to_haxe(a, code, ir_function) for a in expr.constructor_args)
             rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}{disasm.generic_arguments(code, expr.get_type())}({args_str})"
@@ -2437,6 +2446,9 @@ def _redefined_locals(stmt: IRStatement) -> Set[IRLocal]:
                     found.add(arr.target)
             elif isinstance(s.target, IRField) and isinstance(s.target.target, IRLocal):
                 found.add(s.target.target)
+        elif isinstance(s, (IRRef, IRRefNew)) and isinstance(s.target, IRLocal):
+            # A reference lets whatever it is handed to write the local.
+            found.add(s.target)
         for child in s.get_children():
             if isinstance(child, IRBlock):
                 for child_stmt in child.statements:
@@ -3934,6 +3946,17 @@ def _closure_adapter(
     params, body = entry
     if not params:
         return None
+    captured = expr.obj.get_type().definition
+    helper_type = expr.fun.type.resolve(code).definition
+    if (
+        isinstance(captured, Fun)
+        and isinstance(helper_type, Fun)
+        and [disasm.type_name(code, a.resolve(code)) for a in captured.args]
+        == [disasm.type_name(code, a.resolve(code)) for a in helper_type.args[1:]]
+        and disasm.type_name(code, captured.ret.resolve(code))
+        == disasm.type_name(code, helper_type.ret.resolve(code))
+    ):
+        return None  # nothing is converted: the source wrote the lambda that calls it
     # A Dynamic argument handed on as a basic type is converted by the adapter itself.
     forwarded = ", ".join(
         rf"(?:{re.escape(p)}|cast\({re.escape(p)}, (?:Int|Float|Bool)\))" for p in params[1:]
@@ -4317,6 +4340,12 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                 arg_haxe_type_name = ifacenames.refine(
                     arg_haxe_type_name, code, ("r", func_core.findex.value, start_arg + i)
                 )
+                if (
+                    arg_haxe_type_name == "Dynamic"
+                    and disasm.type_name(code, arg_core_type) == "hl.BaseType"
+                    and enumparams.is_enum_parameter(code, func_core.findex.value, start_arg + i)
+                ):
+                    arg_haxe_type_name = "Enum<Dynamic>"
 
             param_name = f"arg{i}"
             local_idx = start_arg + i

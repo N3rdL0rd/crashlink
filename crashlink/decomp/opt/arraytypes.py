@@ -340,9 +340,35 @@ def _walk_statement(
         # `for (x in arr)` reads every element into x.
         _record_array_source(_strip_cast(stmt.array), stmt.elem.get_type(), code, global_cache)
     _record_cast_element_reads(stmt, code, global_cache)
+    _record_element_pushes(stmt, code, global_cache)
     for child in stmt.get_children():
         if isinstance(child, IRBlock):
             _walk_block(child, code, visited, global_cache)
+
+
+# Methods whose last argument is an element stored into the receiver array.
+_ELEMENT_STORE_METHODS = {f"hl.types.ArrayObj.{method}" for method in ("push", "unshift")}
+
+
+def _record_element_pushes(
+    stmt: IRStatement, code: Bytecode, global_cache: Dict[Tuple[str, str], Type]
+) -> None:
+    """`arr.push(v)`: v's type is the element type, as for `arr[i] = v`."""
+    for call in _collect_calls(stmt):
+        function = _called_function(call)
+        if (
+            function is None
+            or len(call.args) != 2
+            or code.full_func_name(function) not in _ELEMENT_STORE_METHODS
+        ):
+            continue
+        try:
+            value_type = _strip_cast(call.args[1]).get_type()
+        except Exception:
+            continue
+        if value_type.kind.value == Type.Kind.FUN.value:
+            continue  # a bound closure's own type is its lifted function's, with the environment
+        _record_array_source(_strip_cast(call.args[0]), value_type, code, global_cache)
 
 
 # Methods whose result is one element of the receiver array.
@@ -605,11 +631,15 @@ def _share_type_variable_elements(
 
 
 def _collect_calls(stmt: IRStatement) -> List[IRCall]:
+    """The calls the statement itself evaluates: in its value, condition, scrutinee or returned expression
+    (not those of the blocks nested in it, which are statements of their own)."""
     calls: List[IRCall] = []
-    if isinstance(stmt, IRAssign) and isinstance(stmt.expr, IRExpression):
-        _collect_calls_expr(stmt.expr, calls)
-    elif isinstance(stmt, IRCall):
+    if isinstance(stmt, IRExpression):
         _collect_calls_expr(stmt, calls)
+    else:
+        for child in stmt.get_children():
+            if isinstance(child, IRExpression):
+                _collect_calls_expr(child, calls)
     return calls
 
 

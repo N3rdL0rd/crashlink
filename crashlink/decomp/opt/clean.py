@@ -19,8 +19,10 @@ from ...core import (
     Fun,
     Function,
     I32,
+    Null,
     Obj,
     Opcode,
+    Ref,
     Type,
     Virtual,
     destaticify,
@@ -1750,6 +1752,21 @@ def _overriding_defaults(code: Bytecode, func: Function) -> Dict[int, Tuple[Func
     return found
 
 
+def nullable_basic_name(code: Bytecode, typ: Type) -> str:
+    """The name of `typ`, or of the type a `Null<T>` wraps: what Haxe unifies the value with."""
+    definition = typ.definition
+    if isinstance(definition, Null):
+        typ = definition.type.resolve(code)
+    return disasm.type_name(code, typ)
+
+
+def optional_basic_name(code: Bytecode, definition: Any) -> str:
+    """The basic type an optional parameter whose type is `definition` holds (an `hl.Ref` or a `Null`), else ''."""
+    if isinstance(definition, (Ref, Null)):
+        return disasm.type_name(code, definition.type.resolve(code))
+    return ""
+
+
 def default_arg_value(code: Bytecode, load: Opcode) -> IRConst:
     """The constant a default-argument prologue's `load` writes."""
     if load.op == "Bool":
@@ -1999,6 +2016,7 @@ class IRDefaultArgumentRecovery(IROptimizer):
             for reg, (_, load) in overriding_default_arg_regs(self.func.code, callee).items():
                 defaults.setdefault(reg, load)
         omitted: List[int] = []
+        nulls: Dict[int, IRConst] = {}
         abstract = callee is not None and [op.op for op in callee.ops] == ["Null", "Throw"]
         for i, arg in enumerate(call.args):
             load = defaults.get(i + first)
@@ -2038,6 +2056,7 @@ class IRDefaultArgumentRecovery(IROptimizer):
             elif isinstance(value, IRConst) and value.const_type == IRConst.ConstType.NULL:
                 call.args[i] = default_arg_value(self.func.code, load)
                 omitted.append(i)
+                nulls[i] = value
             elif isinstance(value, IRLocal):
                 call.args[i] = value
             else:
@@ -2047,6 +2066,31 @@ class IRDefaultArgumentRecovery(IROptimizer):
         while omitted and omitted[-1] == len(call.args) - 1:
             call.args.pop()
             omitted.pop()
+        # A skipped optional argument that is not trailing stays the null it was passed as when no later
+        # argument could be taken for it (the call is written without it); else its default is spelled out.
+        if nulls and callee is not None:
+            fun_type = callee.type.resolve(self.func.code).definition
+            if isinstance(fun_type, Fun):
+                self._restore_skipped_nulls(call, nulls, fun_type, first)
+
+    def _restore_skipped_nulls(
+        self, call: IRCall, nulls: Dict[int, IRConst], fun_type: Fun, first: int
+    ) -> None:
+        code = self.func.code
+
+        def basic(index: int) -> str:
+            return optional_basic_name(code, fun_type.args[index + first].resolve(code).definition)
+
+        for i, null in nulls.items():
+            if i >= len(call.args) or i + first >= len(fun_type.args) or not basic(i):
+                continue
+            wanted = basic(i)
+            if all(
+                wanted != nullable_basic_name(code, call.args[j].get_type())
+                and (j + first >= len(fun_type.args) or wanted != basic(j))
+                for j in range(i + 1, len(call.args))
+            ):
+                call.args[i] = null
 
     def _passed_value(
         self, temp: IRLocal, stmts: List[IRStatement], j: int, writes: Dict[int, List[IRAssign]]
