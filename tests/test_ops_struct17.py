@@ -82,3 +82,18 @@ class Main {
 """
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.main")
+
+
+def test_recursive_structure_keeps_its_own_type(tmp_path: Path) -> None:
+    source = """
+private typedef A = {f: A}
+class Main {
+    static function main() {
+        var n:A = {f: null};
+        do n = n.f while (n != null && (n != null || n != null));
+        Sys.println(n == null);
+    }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Main.main")

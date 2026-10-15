@@ -2069,6 +2069,10 @@ class Bytecode(Serialisable):
         self._erased_array_slots: Optional[Dict[Tuple[Any, ...], "Type"]] = None
         # The type parameters of classes, recovered from casts of their erased slots; see classgenerics.
         self._class_generics: Optional[Any] = None
+        # Structures that contain themselves (id of definition -> typedef name), and those a rendered
+        # type has named so far; see disasm.recursive_structures.
+        self._recursive_structs: Optional[Dict[int, str]] = None
+        self._recursive_used: Dict[int, Type] = {}
         self._hxsl_shaders_cache: Optional[Any] = None
         # id(type definition) -> index in self.types; see type_index_of.
         self._type_index_by_def: Optional[Dict[int, int]] = None
@@ -2121,6 +2125,8 @@ class Bytecode(Serialisable):
         self._global_param_elem_types = {}
         self._erased_array_slots = None
         self._class_generics = None
+        self._recursive_structs = None
+        self._recursive_used = {}
 
     def invalidate_proto_field_cache(self) -> None:
         """

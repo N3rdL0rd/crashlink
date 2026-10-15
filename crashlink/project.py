@@ -544,6 +544,9 @@ def export(
         if f"src/{name}.hx" in files:
             raise ValueError(f"the image declares a type {name!r}, which the project's externs need")
         files[f"src/{name}.hx"] = rewrite(text + "\n")
+    structs = disasm.recursive_typedefs(code)
+    if structs:
+        files[f"src/{disasm.RECURSIVE_STRUCTS_MODULE}.hx"] = rewrite(structs + "\n")
     if plan.imports:
         files["src/import.hx"] = "".join(f"import {path};\n" for path in plan.imports)
     files["build.hxml"] = build_file(plan)
