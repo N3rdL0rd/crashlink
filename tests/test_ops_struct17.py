@@ -18,8 +18,8 @@ def _tools() -> None:
         pytest.skip("project round trips require Haxe and HashLink")
 
 
-def _roundtrip(tmp_path: Path, source: str) -> Tuple[str, Bytecode, Bytecode]:
-    (tmp_path / "src").mkdir()
+def _roundtrip(tmp_path: Path, source: str, prepared: bool = False) -> Tuple[str, Bytecode, Bytecode]:
+    (tmp_path / "src").mkdir(exist_ok=prepared)
     (tmp_path / "src" / "Main.hx").write_text(source)
     target = tmp_path / "original.hl"
     result = subprocess.run(
@@ -117,3 +117,33 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert "__alloc__" not in text
     assert _same(original, recompiled, "$Main.throwInt")
+
+
+def test_recursive_structure_naming_a_private_type_still_compiles(tmp_path: Path) -> None:
+    (tmp_path / "src" / "p").mkdir(parents=True)
+    (tmp_path / "src" / "p" / "Holder.hx").write_text(
+        """package p;
+
+private class C implements I {
+    public var v(get, never):String;
+    function get_v():String return "";
+    public function new() {}
+    public function f(i:I) {
+        Sys.println(i.v);
+    }
+}
+
+private interface I {
+    var v(get, never):String;
+    function f(i:I):Void;
+}
+
+class Holder {
+    public static function run() {
+        var c = new C();
+        c.f(c);
+    }
+}
+"""
+    )
+    _roundtrip(tmp_path, "class Main { static function main() { p.Holder.run(); } }", prepared=True)

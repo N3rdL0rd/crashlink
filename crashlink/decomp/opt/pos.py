@@ -84,6 +84,24 @@ class IRPosInfosFolder(TraversingIROptimizer):
                 call = next(
                     (c for c in self._calls(stmts[i + 1 :]) if c.args and c.args[-1] == stmt.target), None
                 )
+                converted = next(
+                    (
+                        c.args[-1]
+                        for c in self._calls(stmts[i + 1 :])
+                        # the temp inliner may already have folded the conversion into the call
+                        if call is None
+                        and c.args
+                        and isinstance(c.args[-1], IRCast)
+                        and c.args[-1].expr == stmt.target
+                    ),
+                    None,
+                )
+                if isinstance(converted, IRCast) and self._mentions(stmt.target, True) == 2:
+                    # A literal converted to the expected structure is built dynamically; `cast {..}` is not.
+                    converted.expr = stmt.expr
+                    converted.adopt(stmt)
+                    del stmts[i]
+                    continue
                 if call is not None and self._position_param(call) and self._mentions(stmt.target, True) == 2:
                     if not self._tag(call, stmt.expr):
                         if not (isinstance(call.target, IRConst) and isinstance(call.target.value, Function)):
