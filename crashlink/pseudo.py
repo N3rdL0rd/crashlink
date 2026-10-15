@@ -94,6 +94,7 @@ from .decomp import (
 )
 from .decomp.ir import IREnumPattern, IRInlineCall, basic_type_of_global
 from .decomp.opt.arraytypes import function_return_elem_type, recover_closure_param_elem_types
+from .decomp.opt.inliner import IRTempAssignmentInliner
 from .decomp.opt.clean import default_arg_regs, default_arg_value, overriding_default_arg_regs
 from .decomp.inline_calls import inline_index, is_inline_template
 
@@ -1710,6 +1711,14 @@ def _expression_to_haxe(
                 rendered = _render_string_concat(expr, code, ir_function)
                 if rendered is not None:
                     return rendered
+            # `Reflect.makeVarArgs(f)` is an extern generic over the function's return type; the
+            # compiler calls the private `_makeVarArgs` with `f` adapted to return Dynamic.
+            if (
+                _is_std_function(func, code)
+                and code.full_func_name(func) == "$Reflect._makeVarArgs"
+                and len(expr.args) == 1
+            ):
+                return f"Reflect.makeVarArgs({_expression_to_haxe(expr.args[0], code, ir_function)})"
             # `cast(v, C)` and `Std.isOfType(v, C)` on a class reach `hl.BaseType.check` with the
             # class object as receiver; source has no such call, `Std.isOfType` is the same test.
             if (
@@ -3681,6 +3690,53 @@ def _capture_context_in_place(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[L
                     node.captures = list(captured)
 
 
+def _collapse_adapter_guards(ir_func: IRFunction) -> None:
+    """`t = f == null ? null : adapter(f)` is `t = f`.
+
+    Converting a function value to a function type that differs only in a return or Dynamic
+    argument type wraps it in an adapter helper, guarded by a null test; the source passed `f`
+    and the compiler adds both again."""
+    code = ir_func.code
+    for block in [n for n in _walk_ir(ir_func.block) if isinstance(n, IRBlock)]:
+        for idx, stmt in enumerate(block.statements):
+            if not (
+                isinstance(stmt, IRConditional)
+                and isinstance(stmt.condition, IRBoolExpr)
+                and stmt.condition.op == IRBoolExpr.CompareType.NULL
+                and isinstance(stmt.condition.left, IRLocal)
+                and len(stmt.true_block.statements) == 1
+                and len(stmt.false_block.statements) == 1
+            ):
+                continue
+            null_branch, call_branch = stmt.true_block.statements[0], stmt.false_block.statements[0]
+            if not (
+                isinstance(null_branch, IRAssign)
+                and isinstance(call_branch, IRAssign)
+                and null_branch.target == call_branch.target
+                and isinstance(null_branch.expr, IRConst)
+                and null_branch.expr.const_type == IRConst.ConstType.NULL
+                and isinstance(call_branch.expr, IRBoundClosure)
+                and call_branch.expr.obj == stmt.condition.left
+            ):
+                continue
+            function = _expression_to_haxe(stmt.condition.left, code, ir_func)
+            if _closure_adapter(call_branch.expr, function, code, ir_func) != function:
+                continue
+            # Assigned to a temporary of the adapted function type, `f` would not type-check
+            # (`Void -> Void` is not `Void -> Dynamic`); where the compiler adapts it is the
+            # call it is passed to, so the temporary has to go.
+            target = call_branch.target
+            if not (isinstance(target, IRLocal) and idx + 1 < len(block.statements)):
+                continue
+            if _count_local_reads_and_writes(ir_func.block, target.name) != (1, 2):
+                continue
+            if IRTempAssignmentInliner(ir_func)._substitute_in_statement(
+                block.statements[idx + 1], target, call_branch.expr
+            ):
+                del block.statements[idx]
+                return _collapse_adapter_guards(ir_func)
+
+
 def _hoist_closure_contexts(ir_func: IRFunction, ctx_bodies: Dict[int, Tuple[List[str], str]]) -> None:
     """Bind closures to the values their capture context holds, and drop the context.
 
@@ -3775,6 +3831,39 @@ def _hoist_one_context(
         closure.captures = list(captured)
     del block.statements[idx]
     return True
+
+
+def _void_return_adapter(helper_ir: IRFunction) -> bool:
+    """Whether a helper only calls its first parameter with the others and returns nothing (null).
+
+    Passing a function that returns Void where one returning Dynamic is expected wraps it in such
+    a helper (`Reflect.makeVarArgs(f)` with `f:Array<Dynamic>->Void`); source wrote the function."""
+    signature = helper_ir.func.type.resolve(helper_ir.code).definition
+    if not isinstance(signature, Fun) or not signature.args:
+        return False
+    statements = list(helper_ir.block.statements)
+    if (
+        statements
+        and isinstance(statements[-1], IRReturn)
+        and (
+            statements[-1].value is None
+            or (
+                isinstance(statements[-1].value, IRConst)
+                and statements[-1].value.const_type == IRConst.ConstType.NULL
+            )
+        )
+    ):
+        statements.pop()
+    if len(statements) != 1 or not isinstance(statements[0], IRCall):
+        return False
+    call = statements[0]
+    names = [local.name for local in helper_ir.locals[: len(signature.args)]]
+    return (
+        len(names) == len(signature.args)
+        and isinstance(call.target, IRLocal)
+        and call.target.name == names[0]
+        and [a.name if isinstance(a, IRLocal) else None for a in call.args] == names[1:]
+    )
 
 
 def _optional_ref_adapter(helper_ir: IRFunction) -> Optional[List[bool]]:
@@ -4140,6 +4229,9 @@ def _closure_adapter(
         params = ", ".join(f"?{n}" if flag else n for n, flag in zip(names, optional))
         callee = f"({obj_str})" if _is_lambda_text(obj_str) else obj_str
         return f"({params}) -> {callee}({', '.join(names)})"
+    if expr.fun.findex.value in getattr(ir_function, "_return_adapters", ()):
+        getattr(ir_function, "_inlined_closures", set()).add(expr.fun.findex.value)
+        return obj_str
     helpers = getattr(ir_function, "_inline_closure_bodies", None)
     entry = helpers.get(expr.fun.findex.value) if helpers else None
     if entry is None:
@@ -7298,12 +7390,14 @@ def _class_body(
     # below consults `inlined`.
     inline_bodies: Dict[int, Tuple[List[str], str]] = {}
     optional_adapters: Dict[int, List[bool]] = {}
+    return_adapters: Set[int] = set()
     ctx_bodies: Dict[int, Tuple[List[str], str]] = {}
     inlined: Set[int] = set()
     for ir_func in static_methods + methods + list(helper_irs.values()):
         setattr(ir_func, "_inline_closure_bodies", inline_bodies)
         setattr(ir_func, "_helper_irs", helper_irs)
         setattr(ir_func, "_optional_adapters", optional_adapters)
+        setattr(ir_func, "_return_adapters", return_adapters)
         setattr(ir_func, "_inlined_closures", inlined)
         setattr(ir_func, "_ctx_closure_bodies", ctx_bodies)
     # A closure is created inside the one that encloses it and so has the higher findex; rendering
@@ -7319,6 +7413,7 @@ def _class_body(
                 setattr(helper_ir, "_ctx_param_name", helper_ir.locals[0].name)
         # A closure nested in this one that captured the same variables is bound to them first, so
         # that this body reads as the lambda it came from.
+        _collapse_adapter_guards(helper_ir)
         _hoist_closure_contexts(helper_ir, ctx_bodies)
         ctx_body = _closure_context_body(helper_ir)
         if ctx_body is not None:
@@ -7327,6 +7422,8 @@ def _class_body(
         optional = _optional_ref_adapter(helper_ir) if body is None else None
         if optional is not None:
             optional_adapters[findex] = optional
+        elif body is None and _void_return_adapter(helper_ir):
+            return_adapters.add(findex)
         if body is not None:
             inline_bodies[findex] = body
     for ir_func in static_methods + methods:
@@ -7338,6 +7435,7 @@ def _class_body(
                 if body is not None:
                     inline_bodies[helper_ir.func.findex.value] = body
     for ir_func in static_methods + methods:
+        _collapse_adapter_guards(ir_func)
         _hoist_closure_contexts(ir_func, ctx_bodies)
 
     # Collect natives, std functions, referenced classes and referenced enums.

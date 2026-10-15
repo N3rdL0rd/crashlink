@@ -202,3 +202,25 @@ class Main {
     assert "__ClosureCtx" not in files["src/Main.hx"]
     assert expected == actual
     assert _same_signature(original, recompiled, "Main.main")
+
+
+def test_function_returning_void_passed_where_dynamic_is_expected_is_not_adapted_in_source(
+    tmp_path: Path,
+) -> None:
+    # `Reflect.makeVarArgs(f)` with `f:Array<Dynamic>->Void`: the compiler wraps `f` in a helper that
+    # returns null, guarded by a null test. The source passed `f` itself to the public extern.
+    source = """
+class Main {
+    static function main() {
+        var f = function(args:Array<Dynamic>) {
+            Sys.println(args.length);
+        };
+        var g:Dynamic = Reflect.makeVarArgs(f);
+        g(1, 2, 3);
+    }
+}
+"""
+    files, expected, actual, original, recompiled = roundtrip(tmp_path, source)
+    assert ".bind(" not in files["src/Main.hx"]
+    assert expected == actual
+    assert _same_signature(original, recompiled, "Main.main")
