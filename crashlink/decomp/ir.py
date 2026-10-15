@@ -8,7 +8,7 @@ import threading
 import re
 import weakref
 from enum import Enum as _Enum
-from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar
+from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar, Union
 
 from ..core import (
     Bytecode,
@@ -493,7 +493,7 @@ class IRStoreExpr(IRExpression):
 class IRPostIncrement(IRExpression):
     """`target++` / `target--` used as a value: it yields what the field held and then bumps it."""
 
-    def __init__(self, code: Bytecode, target: "IRField", delta: int):
+    def __init__(self, code: Bytecode, target: Union["IRField", "IRArrayAccess"], delta: int):
         super().__init__(code)
         self.target = target
         self.delta = delta

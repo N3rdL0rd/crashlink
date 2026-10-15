@@ -153,3 +153,22 @@ class Main {
     text, original, recompiled = _roundtrip(tmp_path, source)
     assert ": Dynamic).nativeVar" in text
     assert _same(original, recompiled, "$Main.test")
+
+
+def test_post_increment_of_a_captured_variable_is_written_as_one(tmp_path: Path) -> None:
+    source = """
+class Main {
+    static function show(a:Dynamic, b:Dynamic) { Sys.println(a + "," + b); }
+    static function test() {
+        var count = 0;
+        function counter() return count++;
+        var a = counter();
+        var b = counter();
+        show(a, b);
+    }
+    static function main() { test(); }
+}
+"""
+    text, original, recompiled = _roundtrip(tmp_path, source)
+    assert "count++" in text
+    assert _same(original, recompiled, "$Main.test")

@@ -28,14 +28,18 @@ def _is_one(const: IRConst) -> bool:
     return getattr(value, "value", value) == 1
 
 
-def _same_field(a: IRExpression, b: IRExpression) -> bool:
-    return (
-        isinstance(a, IRField)
-        and isinstance(b, IRField)
-        and a.field_name == b.field_name
-        and isinstance(a.target, IRLocal)
-        and a.target == b.target
-    )
+def _same_place(a: IRExpression, b: IRExpression) -> bool:
+    """The same field of one local, or the same element of one local array (a captured variable)."""
+    if isinstance(a, IRField) and isinstance(b, IRField):
+        return a.field_name == b.field_name and isinstance(a.target, IRLocal) and a.target == b.target
+    if isinstance(a, IRArrayAccess) and isinstance(b, IRArrayAccess):
+        return (
+            isinstance(a.array, IRLocal)
+            and a.array == b.array
+            and isinstance(a.index, (IRConst, IRLocal))
+            and a.index == b.index
+        )
+    return False
 
 
 def _walk(node: IRStatement) -> Iterator[IRStatement]:
@@ -75,7 +79,7 @@ class IRPostIncrementRecovery(_ReferenceAwareOptimizer):
             isinstance(read, IRAssign)
             and isinstance(read.target, IRLocal)
             and re.fullmatch(r"var\d+", read.target.name)
-            and isinstance(read.expr, IRField)
+            and isinstance(read.expr, (IRField, IRArrayAccess))
         ):
             return False
         temp, field = read.target, read.expr
@@ -99,7 +103,7 @@ class IRPostIncrementRecovery(_ReferenceAwareOptimizer):
         store, user = statements[position], statements[position + 1]
         if not (
             isinstance(store, IRAssign)
-            and _same_field(store.target, field)
+            and _same_place(store.target, field)
             and isinstance(store.expr, IRArithmetic)
             and store.expr.op in (IRArithmetic.ArithmeticType.ADD, IRArithmetic.ArithmeticType.SUB)
             and store.expr.left == temp
@@ -126,7 +130,7 @@ class IRPostIncrementRecovery(_ReferenceAwareOptimizer):
         del statements[start : position + 1]
         return True
 
-    def _order_free(self, user: IRStatement, temp: IRLocal, field: IRField) -> bool:
+    def _order_free(self, user: IRStatement, temp: IRLocal, field: IRExpression) -> bool:
         """Nothing in `user` besides the use of `temp` observes or changes the field, or does
         anything whose order against the increment could show."""
         stack: List[IRStatement] = [user]
@@ -138,10 +142,13 @@ class IRPostIncrementRecovery(_ReferenceAwareOptimizer):
                 if node.value is None:
                     return False
             elif isinstance(node, IRAssign):
-                if _same_field(node.target, field) or not isinstance(node.target, (IRLocal, IRField)):
+                if _same_place(node.target, field) or not isinstance(node.target, (IRLocal, IRField)):
                     return False
             elif isinstance(node, IRField):
-                if node.field_name == field.field_name:
+                if isinstance(field, IRField) and node.field_name == field.field_name:
+                    return False
+            elif isinstance(node, IRArrayAccess) and isinstance(field, IRArrayAccess):
+                if _same_place(node, field):
                     return False
             elif isinstance(node, IRCall):
                 # an element read of an array (`a.getDyn(i)`), which only looks at `a` and the index

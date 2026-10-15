@@ -4049,6 +4049,12 @@ def _capture_box_uses(
             walk(target, True)
             walk(node.expr)
             return
+        if isinstance(node, IRPostIncrement) and element(node.target):
+            inside = count(node)
+            total += inside
+            accounted += inside
+            writes += 1
+            return
         if element(node):
             inside = count(node)
             total += inside
