@@ -289,3 +289,19 @@ class Main {
 }
 """
     _check(tmp_path, source, "Main.decrease", "Main.measure", "Main.main")
+
+
+def test_array_returned_by_a_std_function_is_not_cast(tmp_path: Path) -> None:
+    source = """
+private enum E {
+    A;
+    B;
+}
+
+class Main {
+    static function main() {
+        Sys.println(Type.allEnums(E).join(","));
+    }
+}
+"""
+    _check(tmp_path, source, "Main.main")

@@ -2241,8 +2241,14 @@ def _expression_to_haxe(
             # erased `Iterable<A>` of a generic parameter): the context only gives the last
             # one, so the first is ascribed or the class would convert to the last directly.
             return f"({inner} : {disasm._haxe_annotation(code, expr.expr.get_type())})"
-        if target_name == "hl.types.ArrayObj" and source_name == "hl.types.ArrayDyn":
+        if (
+            target_name == "hl.types.ArrayObj"
+            and source_name == "hl.types.ArrayDyn"
+            and not _is_std_call(expr.expr)
+        ):
             # The one conversion between the two a `T` array makes: it is a cast, never implicit.
+            # (A std function returning `Array<T>` hands back an ArrayDyn that the compiler converts
+            # for its caller; the source has no cast there.)
             return f"(cast ({inner}))"
         if target_name in _ARRAY_WRAPPERS and source_name in _ARRAY_WRAPPERS:
             # ArrayObj/ArrayDyn are one Haxe `Array<T>`; the element type comes from the context,
@@ -5663,6 +5669,16 @@ def _is_std_private_type(typ: "Type", code: Bytecode) -> bool:
     names it `pkg._Module.Name`, and source outside that module can't name it."""
     name = disasm.type_name(code, typ)
     return name in STD_TYPES and bool(re.search(r"\._[^.]+\.[^.]+$", name))
+
+
+def _is_std_call(expr: IRExpression) -> bool:
+    """Whether `expr` calls a function of the standard library directly."""
+    return (
+        isinstance(expr, IRCall)
+        and isinstance(expr.target, IRConst)
+        and isinstance(expr.target.value, Function)
+        and _is_std_function(expr.target.value, expr.code)
+    )
 
 
 def _is_std_function(func: "Function", code: Bytecode) -> bool:

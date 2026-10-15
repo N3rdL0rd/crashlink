@@ -54,7 +54,7 @@ def _from_std_array_code(code: Bytecode, op: Opcode) -> bool:
     returns the element type its caller names, rather than reading one a declaration fixed."""
     if op.op in ("New", "Null", "Type"):
         return True
-    if not op.op.startswith("Call") or "fun" not in op.df:
+    if op.op is None or not op.op.startswith("Call") or "fun" not in op.df:
         return False
     callee = code.fn(op.df["fun"].value)
     if not isinstance(callee, Function):
