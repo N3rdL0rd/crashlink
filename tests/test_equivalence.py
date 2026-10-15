@@ -268,3 +268,24 @@ def test_a_program_is_proven_only_when_every_function_is(tmp_path: Path) -> None
     other = build(tmp_path, "c", f("return (p + q) * 2 + p;"))
     assert prove(base, same, ["Main"])
     assert not prove(base, other, ["Main"])
+
+
+def test_a_dead_read_of_this_is_not_an_observable_null_check(tmp_path: Path) -> None:
+    # `this` of an instance method is never null (its callers checked the receiver), so a read of one
+    # of its fields that nothing uses is not an effect; a dead read of a PARAMETER's field still is.
+    def method(name: str, body: str) -> str:
+        code = build(
+            tmp_path,
+            name,
+            "    public var w:Int = 3;\n    public function g(p:Int, o:Box):Int {"
+            + body
+            + "}\n"
+            + f("return p;"),
+        )
+        func = next(fn for fn in code.functions if code.full_func_name(fn) == "Main.g")
+        result = signature(code, func)
+        assert result and result.digest
+        return result.digest
+
+    assert method("a", "var dead = w; return p;") == method("b", "return p;")
+    assert method("c", "var dead = o.v; return p;") != method("d", "return p;")

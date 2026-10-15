@@ -674,7 +674,10 @@ class Builder:
         elif name in ("Field", "GetThis"):
             obj_reg = df["obj"].value if name == "Field" else 0
             obj = self.reg(obj_reg, b)
-            self.guard(b, obj)
+            if (
+                name == "Field"
+            ):  # `this` of an instance method is never null: its callers checked the receiver
+                self.guard(b, obj)
             fname = self.namer.field(type_of(obj_reg), df["field"].value)
             known = g.find(obj)
             if known.kind == "str" and fname == "length" and self.reg_desc[obj_reg] == "obj:String":
@@ -700,7 +703,7 @@ class Builder:
         elif name in ("SetField", "SetThis"):
             obj_reg = df["obj"].value if name == "SetField" else 0
             obj = self.reg(obj_reg, b, lazy_ok=True)
-            if obj.id not in self.pending:
+            if obj.id not in self.pending and name == "SetField":
                 self.guard(b, obj)
             fname = self.namer.field(type_of(obj_reg), df["field"].value)
             value = R("src")
@@ -814,7 +817,8 @@ class Builder:
             if name == "CallThis":
                 args = [self.reg(0, b)] + args
             obj_reg = df["args"].value[0].value if name == "CallMethod" else 0
-            self.guard(b, args[0])
+            if name == "CallMethod":
+                self.guard(b, args[0])
             direct = self.namer.devirtualise(type_of(obj_reg), df["field"].value)
             if direct is not None:
                 set_dst(self.effect(b, "call", (direct,), *args, ty=dst_desc()))
