@@ -860,6 +860,46 @@ def recursive_structures(code: Bytecode) -> Dict[int, str]:
     return result
 
 
+def _private_type_names(code: Bytecode) -> List[str]:
+    """Every spelling of each private type (`pkg._Mod.T` in the bytecode, `pkg.Mod.T` in source)."""
+    names: List[str] = []
+    for typ in code.types:
+        definition = typ.definition
+        if isinstance(definition, (Obj, Enum, Abstract)):
+            raw = definition.name.resolve(code)
+            if raw.rpartition(".")[2].startswith("$") and len(raw.rpartition(".")[2]) > 1:
+                # `$I` holds the statics of `I`, and is how an interface (which has no type of its own) shows up.
+                raw = raw.rpartition(".")[0] + "." + raw.rpartition(".")[2][1:]
+            segments = raw.split(".")
+            if any(len(s) > 1 and s[0] == "_" and s[1].isupper() for s in segments):
+                names.append(raw)
+                names.append(
+                    ".".join(s[1:] if len(s) > 1 and s[0] == "_" and s[1].isupper() else s for s in segments)
+                )
+    return names
+
+
+def _recursive_names_private(code: Bytecode, key: int) -> bool:
+    """Whether the typedef a recursive structure would get has to name a private type: `CrashlinkStructs`
+    is a module of its own and cannot see another module's private types, so such a structure stays as
+    it was (a structure written out, one level open)."""
+    cache = code._recursive_private
+    if key in cache:
+        return cache[key]
+    cache[key] = False  # in progress: a structure that mentions itself does not make itself private
+    types = {id(t.definition): t for t in code.types}
+    used_before = dict(code._recursive_used)
+    try:
+        body = _haxe_annotation(code, types[key], body=key)
+    finally:
+        code._recursive_used.clear()
+        code._recursive_used.update(used_before)
+    private = _private_type_names(code)
+    result = any(re.search(r"(?<![\w.])" + re.escape(name) + r"(?![\w])", body) for name in private)
+    cache[key] = result
+    return result
+
+
 def recursive_typedefs(code: Bytecode) -> str:
     """The `CrashlinkStructs` module declaring every recursive structure a rendered type named."""
     names = recursive_structures(code)
@@ -898,7 +938,7 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False, body: O
     def render(current: Type) -> str:
         definition = current.definition
         key = id(definition)
-        if key in recursive and not native:
+        if key in recursive and not native and not _recursive_names_private(code, key):
             if key == opened[0]:
                 opened[0] = None  # the typedef's own body: only its members refer to it by name
             else:
