@@ -1664,6 +1664,14 @@ class IRTempAssignmentInliner(_ReferenceAwareOptimizer):
         if isinstance(expr, IRField):
             return self._has_nontrivial_computation(expr.target)
         if isinstance(expr, IRArrayAccess):
+            # `a[i]` on an Array object is the bounds-checked read (`IRArrayObjBoundsCheckCollapser`
+            # folded the check into it): every copy recompiles to its own check and branch, where
+            # the original read the element once into a register.
+            try:
+                if expr.array.get_type().kind.value == Type.Kind.OBJ.value:
+                    return True
+            except Exception:
+                pass
             return self._has_nontrivial_computation(expr.array) or self._has_nontrivial_computation(
                 expr.index
             )

@@ -115,3 +115,19 @@ class Main {
 """
     _text, original, recompiled = _roundtrip(tmp_path, source)
     assert _same(original, recompiled, "$Main.test")
+
+
+def test_array_element_read_once_into_a_temp_is_not_duplicated_into_its_uses(tmp_path: Path) -> None:
+    source = """
+class P {
+    public var v(default, set):Int = 0;
+    public function new() {}
+    function set_v(x:Int) { Sys.println("set"); return v = x; }
+}
+class Main {
+    static function f(a:Array<P>, i:Int) { a[i].v += 2; }
+    static function main() { f([new P(), new P()], 1); }
+}
+"""
+    _text, original, recompiled = _roundtrip(tmp_path, source)
+    assert _same(original, recompiled, "$Main.f")
