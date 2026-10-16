@@ -94,8 +94,8 @@ class TypesView(QWidget):
             kind = typ.definition.__class__.__name__
             try:
                 summary = type_summary(code, index)
-            except Exception:
-                summary = ""
+            except IndexError:
+                summary = ""  # corrupt bytecode: a type/name table index is out of range
 
             self._table.setItem(index, 0, _NumericItem(index))
             self._table.setItem(index, 1, QTableWidgetItem(kind))

@@ -24,7 +24,7 @@ def _initial_value(code: Bytecode, gindex: int) -> str:
     try:
         return repr(code.const_str(gindex))
     except (ValueError, TypeError, KeyError):
-        pass
+        pass  # expected: the global has no constant String initializer — show the raw init below
     init = code.initialized_globals.get(gindex)
     if init is None:
         return ""
@@ -38,8 +38,8 @@ def _global_rows(code: Bytecode) -> List[Tuple[Any, ...]]:
     for gindex, tref in enumerate(code.global_types):
         try:
             type_label = disasm.type_name(code, tref.resolve(code))
-        except Exception:
-            type_label = "?"
+        except IndexError:
+            type_label = "?"  # corrupt bytecode: the global's tIndex or a name's string index is out of range
         refs = len(xi.global_reads(gindex)) + len(xi.global_writes(gindex))
         rows.append((gindex, type_label, refs, _initial_value(code, gindex)))
     return rows

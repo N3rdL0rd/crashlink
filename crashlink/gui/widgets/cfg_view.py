@@ -91,7 +91,10 @@ def _build_dot(ir: IRFunction, theme: Theme) -> Tuple[str, Dict[str, Tuple[int, 
         for i, op in enumerate(node.ops[:_MAX_BLOCK_LINES]):
             try:
                 text = disasm.pseudo_from_op(op, node.base_offset + i, func.regs, code, terse=True)
-            except Exception:
+            except (KeyError, IndexError):
+                # Corrupt bytecode: an operand's field/table index is out of range.
+                # Degrade this one line to the opcode name; anything worse fails the
+                # whole render through the worker's `failed` signal, which is shown.
                 text = op.op or "?"
             rows.append(f"{node.base_offset + i:>4}  {text}")
         if len(node.ops) > _MAX_BLOCK_LINES:

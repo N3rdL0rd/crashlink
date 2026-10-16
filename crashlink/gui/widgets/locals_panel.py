@@ -83,8 +83,8 @@ class LocalsPanel(QWidget):
             type_str = "?"
             try:
                 type_str = disasm.type_name(code, loc.get_type())
-            except Exception:
-                pass
+            except IndexError:
+                pass  # corrupt bytecode: the local's tIndex or a type name's string index is out of range
             self._table.setItem(row, 2, QTableWidgetItem(type_str))
 
             def_op = loc.defining_op_idx

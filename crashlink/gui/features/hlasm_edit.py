@@ -66,8 +66,8 @@ class HlasmEditDialog(QDialog):
         self._findex = func.findex.value
         try:
             name = code.full_func_name(func)
-        except Exception:
-            name = "<none>"
+        except IndexError:
+            name = "<none>"  # corrupt bytecode: a proto/field name's string index is out of range
         suffix = f" ({name})" if name != "<none>" else ""
         self.setWindowTitle(f"Edit f@{self._findex}{suffix} as .hlasm")
         self.resize(960, 720)

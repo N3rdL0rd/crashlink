@@ -572,6 +572,6 @@ def _func_name(code: Bytecode, func: Function) -> str:
         name = code.full_func_name(func)
         if name:
             return f"f@{func.findex.value}  {name}"
-    except Exception:
-        pass
+    except IndexError:
+        pass  # corrupt bytecode: a proto/field name's string index is out of range
     return f"f@{func.findex.value}"

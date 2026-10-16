@@ -407,7 +407,7 @@ class LogPanel(QWidget):
             try:
                 handle_cmd(bc, cmd_line)
             except SystemExit:
-                pass
+                pass  # a CLI command called sys.exit (e.g. a code path shared with `exit`); the GUI stays up
             except Exception:
                 err_sink(traceback.format_exc())
             finally:

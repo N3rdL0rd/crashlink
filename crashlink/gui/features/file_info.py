@@ -28,7 +28,7 @@ def _rows(code: Bytecode, path: Optional[str]) -> List[Tuple[str, str]]:
         try:
             rows.append(("Size", f"{os.path.getsize(path):,} bytes"))
         except OSError:
-            pass
+            pass  # the file may have moved or become unreadable since loading; the size row is optional
     rows.append(("SHA-256", code.sha256 or "unknown"))
     rows.append(("Bytecode version", str(code.version)))
     rows.append(("Debug info", "yes" if code.has_debug_info else "no"))
