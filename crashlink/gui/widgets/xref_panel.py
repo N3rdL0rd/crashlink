@@ -59,7 +59,9 @@ def _func_label(code: Bytecode, findex: int) -> str:
     try:
         f = code.get_findex_map()[findex]
         return disasm.func_header(code, f)
-    except Exception:
+    except (KeyError, IndexError):
+        # Unknown findex (not in the map) or corrupt bytecode (a name/signature's
+        # table index is out of range) — degrade to the bare reference.
         return f"f@{findex}"
 
 
@@ -81,30 +83,35 @@ def site_from_ref(code: Bytecode, ref: XRef) -> XrefSite:
 
 def describe_symbol(code: Bytecode, ref: SymbolRef) -> str:
     """A short label for what `ref` is, for the status bar and xref titles."""
+    fallback = f"{ref.kind.value} {ref.index}"
     try:
         if ref.kind == SymbolKind.FUNCTION:
             return f"function {_func_label(code, ref.index)}"
         if ref.kind == SymbolKind.GLOBAL:
-            return f"global g@{ref.index} ({disasm.type_name(code, code.global_types[ref.index].resolve(code))})"
+            return (
+                f"global g@{ref.index} ({disasm.type_name(code, code.global_types[ref.index].resolve(code))})"
+            )
         if ref.kind == SymbolKind.TYPE:
             return f"type {disasm.type_name(code, code.types[ref.index])}"
         if ref.kind == SymbolKind.FIELD:
             owner = code.types[ref.index]
             defn = owner.definition
-            assert isinstance(defn, Obj)
+            if not isinstance(defn, Obj):  # the ref's type index doesn't point at a class
+                return fallback
             return f"field {disasm.type_name(code, owner)}.{defn.fields[ref.slot].name.resolve(code)}"
         if ref.kind == SymbolKind.ENUM_CONSTRUCT:
             owner = code.types[ref.index]
             defn = owner.definition
-            assert isinstance(defn, Enum)
+            if not isinstance(defn, Enum):  # the ref's type index doesn't point at an enum
+                return fallback
             return f"enum {disasm.type_name(code, owner)}.{defn.constructs[ref.slot].name.resolve(code)}"
         if ref.kind == SymbolKind.LOCAL:
             return f"local '{ref.name}' in f@{ref.scope}"
         if ref.kind == SymbolKind.STRING:
             return f"string {code.strings.value[ref.index]!r}"
-    except Exception:
-        pass
-    return f"{ref.kind.value} {ref.index}"
+    except IndexError:
+        pass  # corrupt bytecode: the ref's type/global/string/field index is out of range
+    return fallback
 
 
 def resolve_symbol(code: Bytecode, ref: SymbolRef) -> List[XrefGroup]:
@@ -175,8 +182,8 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
         if 0 <= gindex < len(code.global_types):
             try:
                 type_label = disasm.type_name(code, code.global_types[gindex].resolve(code))
-            except Exception:
-                type_label = "?"
+            except IndexError:
+                type_label = "?"  # corrupt bytecode: the global's tIndex or a name's strRef is out of range
             refs = xi.global_reads(gindex) + xi.global_writes(gindex)
             groups.append(
                 XrefGroup(
@@ -209,8 +216,8 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
         if isinstance(defn, (Obj, Enum, Abstract)):
             try:
                 tname = defn.name.resolve(code)
-            except Exception:
-                tname = None
+            except IndexError:
+                tname = None  # corrupt bytecode: the type name's strRef is out of range
             if tname == word:
                 refs = xi.type_refs(ti)
                 groups.append(
@@ -225,8 +232,8 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
             for slot, fld in enumerate(defn.fields):
                 try:
                     fname = fld.name.resolve(code)
-                except Exception:
-                    continue
+                except IndexError:
+                    continue  # corrupt bytecode: the field name's strRef is out of range — skip it
                 if fname != word:
                     continue
                 refs = xi.all_field_accesses(ti, slot)
@@ -242,8 +249,8 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
             for ci, construct in enumerate(defn.constructs):
                 try:
                     cname = construct.name.resolve(code)
-                except Exception:
-                    continue
+                except IndexError:
+                    continue  # corrupt bytecode: the construct name's strRef is out of range — skip it
                 if cname != word:
                     continue
                 refs = xi.construct_uses(ti, ci)
@@ -258,8 +265,8 @@ def resolve_targets(code: Bytecode, word: str) -> List[XrefGroup]:
     # Strings — exact full-string match (cheap, rarely fires).
     try:
         strings = code.strings.value
-    except Exception:
-        strings = []
+    except AttributeError:
+        strings = []  # a duck-typed document without a strings block (Bytecode always has one)
     for i, s in enumerate(strings):
         if s == word:
             refs = xi.string_uses(i)
@@ -365,8 +372,8 @@ class XrefPopup(QFrame):
         if isinstance(fn, Function):
             try:
                 name = self._code.full_func_name(fn)
-            except Exception:
-                name = None
+            except IndexError:
+                name = None  # corrupt bytecode: a proto/field name's strRef is out of range
         return f"f@{site.source_findex}  {name}" if name else site.source_label
 
     def _site_snippet(self, site: XrefSite) -> Optional[str]:
@@ -379,8 +386,8 @@ class XrefPopup(QFrame):
             return None
         try:
             row = disasm.fmt_op_compact(self._code, fn.regs, fn.ops[site.opcode_index], site.opcode_index)
-        except Exception:
-            return None
+        except IndexError:
+            return None  # corrupt bytecode: an operand/debug table index is out of range — no snippet
         return row.split(". ", 1)[-1].strip()
 
     def show_results(self, word: str, groups: List[XrefGroup], at: QPoint) -> None:

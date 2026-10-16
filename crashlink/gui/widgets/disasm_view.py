@@ -193,8 +193,8 @@ class DisasmView(DecompView):
         for findex, fn in methods:
             try:
                 header = disasm.func_header(code, fn)
-            except Exception:
-                header = f"f@{findex}"
+            except IndexError:
+                header = f"f@{findex}"  # corrupt bytecode: a name/signature's table index is out of range
             entries.append(header + ":")
             op_start = len(entries)
             n_ops = 0
@@ -204,7 +204,9 @@ class DisasmView(DecompView):
                 for i, op in enumerate(fn.ops):
                     try:
                         row = disasm.fmt_op_compact(code, fn.regs, op, i, debug=debug, func=fn)
-                    except Exception as e:
+                    except IndexError as e:
+                        # Corrupt bytecode: a debug file/line or operand table index is out
+                        # of range. The row still renders, with the reason inline.
                         row = f"{i:>3}. <fmt error: {e}>"
                     path, line, rest = _split_file_prefix(row.replace("\n", " "))
                     gutter = source = ""

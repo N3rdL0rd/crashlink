@@ -1,10 +1,16 @@
 """Round-trip tests for the .cldb analysis-database format (crashlink.database)."""
 
 import os
+import shutil
+import struct
+import zlib
+from io import BytesIO
 from typing import Dict, Optional
 
+import pytest
+
 from crashlink import database as db
-from crashlink.core import Bytecode
+from crashlink.core import Bytecode, Function
 
 SAMPLE = "tests/haxe/Arithmetic.hl"
 
@@ -54,9 +60,11 @@ def test_round_trip_decompile_cache(tmp_path):
 
     assert result.matched
     assert findex in result.cache
-    text, opmap = result.cache[findex]
-    assert text == "class Foo { function main() {} }"
-    assert opmap == {0: 0, 1: 1, 2: 1}
+    rendered = result.cache[findex]
+    assert rendered.text == "class Foo { function main() {} }"
+    assert rendered.oplines == {0: 0, 1: 1, 2: 1}
+    assert rendered.spans == []  # saved without a spans cache
+    assert rendered.types == []
 
 
 def test_pending_results_are_not_cached(tmp_path):
@@ -203,3 +211,116 @@ def test_save_writes_next_to_source_path_convention(tmp_path):
     fresh = Bytecode.from_path(str(src_copy))
     result = db.load_database(cldb_path, code=fresh, source_path=str(src_copy))
     assert result.matched
+
+
+SPANS_SOURCE = """
+class DbSpans {
+    static var total:Int;
+    static function bump(x:Int):Int {
+        return x + 1;
+    }
+    static function main() {
+        var local = bump(41);
+        total = local;
+        Sys.println(total);
+    }
+}
+"""
+
+
+def test_cached_spans_round_trip(tmp_path):
+    """A function's rendered symbol/type spans must survive a save→load so the GUI
+    can resolve symbols from a cached database before the redecompile lands."""
+    if not shutil.which("haxe"):
+        pytest.skip("haxe not installed")
+    from crashtest.behavior import compile_haxe
+
+    from crashlink import pseudo
+    from crashlink.decomp.function import IRFunction
+
+    artifact, error = compile_haxe(SPANS_SOURCE, "DbSpans", tmp_path / "build")
+    assert error is None, error
+    source_path = str(artifact)
+    code = Bytecode.from_path(source_path)
+    func = next(
+        f
+        for f in code.functions
+        if isinstance(f, Function) and f.ops and code.full_func_name(f).endswith("DbSpans.main")
+    )
+    findex = func.findex.value
+
+    # types=True exercises the type-span codec too; the loader restores whatever
+    # the renderer produced, so this round-trips either way.
+    rendered = pseudo.pseudo_spans(IRFunction(code, func), types=True)
+    assert rendered.spans, "fixture must produce symbol spans"
+    assert rendered.types, "fixture must produce expression type spans"
+
+    cldb_path = str(tmp_path / "test.cldb")
+    db.save_database(
+        cldb_path,
+        code=code,
+        source_path=source_path,
+        class_results={"class:DbSpans": {findex: rendered.text}},
+        opline_cache={findex: rendered.oplines},
+        spans_cache={findex: rendered},
+    )
+
+    fresh = Bytecode.from_path(source_path)
+    result = db.load_database(cldb_path, code=fresh, source_path=source_path)
+
+    assert result.matched
+    restored = result.cache[findex]
+    assert restored.text == rendered.text
+    assert restored.spans == rendered.spans
+    assert restored.types == rendered.types
+    assert restored.oplines == rendered.oplines
+    assert restored.body_start == rendered.body_start
+    # The restored spans actually resolve: the definition of a local is findable.
+    name = next(s.ref for s in rendered.spans if s.ref.kind.name == "LOCAL" and s.is_def)
+    assert restored.definition_of(name) == rendered.definition_of(name)
+
+
+def test_v1_database_without_spans_still_loads(tmp_path):
+    """Format v1 wrote DCAC entries as findex/hash/text/opmap only. Such databases
+    must still load; their entries simply carry no spans (the behaviour cached
+    functions had until the redecompile landed)."""
+    code = _fresh_code()
+    findex = code.functions[0].findex.value
+    text = "class Foo { function main() {} }"
+    opmap = {0: 0, 1: 1}
+    content_hash = db._function_content_hash(code, findex)
+    assert content_hash is not None
+
+    # A v1 DCAC entry, exactly the way the previous version encoded it.
+    dcac = BytesIO()
+    db._write_varint(dcac, 1)  # one entry
+    db._write_varint(dcac, findex)
+    dcac.write(content_hash)
+    db._write_str(dcac, text)
+    db._write_varint(dcac, len(opmap))
+    for op_idx, body_line in opmap.items():
+        db._write_varint(dcac, op_idx)
+        db._write_varint(dcac, body_line)
+
+    body = BytesIO()
+    source_hash, source_size = db.hash_file(SAMPLE)
+    for tag, payload in (
+        (db.TAG_SRCI, db._encode_srci(code, SAMPLE, source_hash, source_size)),
+        (db.TAG_DCAC, dcac.getvalue()),
+    ):
+        body.write(tag)
+        body.write(struct.pack("<I", len(payload)))
+        body.write(payload)
+    raw = zlib.compress(body.getvalue(), level=9)
+    cldb_path = tmp_path / "old.cldb"
+    cldb_path.write_bytes(db.MAGIC + struct.pack("<HB", 1, db.FLAG_COMPRESSED) + raw)
+
+    fresh = _fresh_code()
+    result = db.load_database(str(cldb_path), code=fresh, source_path=SAMPLE)
+
+    assert result.matched
+    rendered = result.cache[findex]
+    assert rendered.text == text
+    assert rendered.oplines == opmap
+    assert rendered.spans == []
+    assert rendered.types == []

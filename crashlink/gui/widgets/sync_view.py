@@ -30,7 +30,9 @@ class SyncView(QWidget):
 
     cycle_requested = Signal()
     comment_requested = Signal(int, int)  # findex, op_idx, from either pane via '/'
-    follow_requested = Signal(int, object)  # findex, SymbolSpan or None, on double-click / Enter in either pane
+    follow_requested = Signal(
+        int, object
+    )  # findex, SymbolSpan or None, on double-click / Enter in either pane
     symbol_focused = Signal(object)  # SymbolSpan under the caret of the pane in use, or None
 
     def __init__(self, opline_cache: Dict[int, Dict[int, int]], parent: Optional[QWidget] = None) -> None:

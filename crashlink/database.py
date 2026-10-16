@@ -18,6 +18,11 @@ Container format (RIFF/PNG-style chunks, so unknown future tags are skippable):
 
 Chunks: SRCI (source identity), ANNO (rename/comment patches), DCAC (decompiled
 pseudocode + opline-map cache), SESS (optional GUI session state).
+
+Format versions: 1 is the original layout; 2 extends each DCAC entry with the
+rendered source's symbol spans, expression type spans and body_start, so a cached
+function can resolve symbols before the background redecompile finishes. Loaders
+accept both — a version-1 entry simply carries no spans.
 """
 
 from __future__ import annotations
@@ -31,9 +36,12 @@ from io import BytesIO
 from typing import BinaryIO, Dict, List, Optional, Tuple
 
 from .core import Bytecode, Function, VarInt
+from .pseudo.doc import RenderedSource
+from .pseudo.symbols import ExprType, SymbolKind, SymbolRef, SymbolSpan, TypeSpan
 
 MAGIC = b"CLDB"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+MIN_FORMAT_VERSION = 1
 FLAG_COMPRESSED = 0x01
 
 TAG_SRCI = b"SRCI"
@@ -43,7 +51,7 @@ TAG_SESS = b"SESS"
 
 _RenameEntry = Tuple[int, int, Optional[int], str]  # findex, reg_idx, defining_op_idx, name
 _CommentEntry = Tuple[int, int, str]  # findex, src_op_idx, text
-_CacheEntry = Tuple[int, bytes, str, Dict[int, int]]  # findex, content_hash, text, opline_map
+_CacheEntry = Tuple[int, bytes, RenderedSource]  # findex, content_hash, rendered (text+spans+opmap)
 
 
 class DatabaseError(Exception):
@@ -79,7 +87,7 @@ class DatabaseInfo:
 class DatabaseLoadResult:
     renames_applied: int = 0
     comments_applied: int = 0
-    cache: Dict[int, Tuple[str, Dict[int, int]]] = field(default_factory=dict)
+    cache: Dict[int, RenderedSource] = field(default_factory=dict)
     session: Optional[SessionState] = None
     warnings: List[str] = field(default_factory=list)
 
@@ -159,11 +167,11 @@ def _pack_file(chunks: List[Tuple[bytes, bytes]], compress: bool = True) -> byte
     return header + raw
 
 
-def _unpack_file(data: bytes) -> Dict[bytes, bytes]:
+def _unpack_file(data: bytes) -> Tuple[int, Dict[bytes, bytes]]:
     if data[:4] != MAGIC:
         raise DatabaseError("Not a .cldb file (bad magic)")
     version, flags = struct.unpack("<HB", data[4:7])
-    if version != FORMAT_VERSION:
+    if not MIN_FORMAT_VERSION <= version <= FORMAT_VERSION:
         raise DatabaseError(f"Unsupported .cldb format version {version}")
 
     body = data[7:]
@@ -178,7 +186,7 @@ def _unpack_file(data: bytes) -> Dict[bytes, bytes]:
             break
         (length,) = struct.unpack("<I", buf.read(4))
         chunks[tag] = buf.read(length)
-    return chunks
+    return version, chunks
 
 
 # ── SRCI: source identity ───────────────────────────────────────────────────
@@ -255,13 +263,56 @@ def _decode_anno(payload: bytes) -> Tuple[List[_RenameEntry], List[_CommentEntry
     return renames, comments
 
 
-# ── DCAC: decompiled pseudocode + opline-map cache ──────────────────────────
+# ── DCAC: decompiled pseudocode + opline-map + symbol-span cache ────────────
+
+_SYMBOL_KINDS = list(SymbolKind)  # stable ordinal ↔ kind mapping for the wire format
+
+
+def _write_symbol_span(buf: BytesIO, span: SymbolSpan) -> None:
+    _write_varint(buf, span.line)
+    _write_varint(buf, span.start)
+    _write_varint(buf, span.end)
+    ref = span.ref
+    buf.write(bytes([_SYMBOL_KINDS.index(ref.kind)]))
+    _write_varint(buf, ref.index)
+    _write_varint(buf, ref.slot)
+    _write_varint(buf, ref.scope)
+    _write_str(buf, ref.name)
+    buf.write(bytes([1 if span.is_def else 0]))
+
+
+def _read_symbol_span(buf: BinaryIO) -> SymbolSpan:
+    line = _read_varint(buf)
+    start = _read_varint(buf)
+    end = _read_varint(buf)
+    kind = _SYMBOL_KINDS[buf.read(1)[0]]
+    ref = SymbolRef(
+        kind, index=_read_varint(buf), slot=_read_varint(buf), scope=_read_varint(buf), name=_read_str(buf)
+    )
+    is_def = buf.read(1)[0] != 0
+    return SymbolSpan(line, start, end, ref, is_def)
+
+
+def _write_type_span(buf: BytesIO, span: TypeSpan) -> None:
+    _write_varint(buf, span.line)
+    _write_varint(buf, span.start)
+    _write_varint(buf, span.end)
+    _write_str(buf, span.type.source)
+    _write_str(buf, span.type.kind)
+
+
+def _read_type_span(buf: BinaryIO) -> TypeSpan:
+    line = _read_varint(buf)
+    start = _read_varint(buf)
+    end = _read_varint(buf)
+    return TypeSpan(line, start, end, ExprType(source=_read_str(buf), kind=_read_str(buf)))
 
 
 def _encode_dcac(
     code: Bytecode,
     class_results: Dict[str, Dict[int, Optional[str]]],
     opline_cache: Dict[int, Dict[int, int]],
+    spans_cache: Optional[Dict[int, RenderedSource]] = None,
 ) -> bytes:
     texts: Dict[int, str] = {}
     for results in class_results.values():
@@ -274,22 +325,38 @@ def _encode_dcac(
         h = _function_content_hash(code, findex)
         if h is None:
             continue  # native or otherwise not a real Function — nothing to cache
-        entries.append((findex, h, text, opline_cache.get(findex, {})))
+        opmap = opline_cache.get(findex, {})
+        # Spans only apply to exactly the text they were rendered with (the same
+        # contract the GUI enforces on load), so a stale/mismatched render degrades
+        # to a text-only entry. Whatever the renderer produced — with or without
+        # expression types — is stored as is.
+        rendered = spans_cache.get(findex) if spans_cache is not None else None
+        if rendered is not None and rendered.text == text and rendered.oplines == opmap:
+            entries.append((findex, h, rendered))
+        else:
+            entries.append((findex, h, RenderedSource(text, [], opmap)))
 
     buf = BytesIO()
     _write_varint(buf, len(entries))
-    for findex, h, text, opmap in entries:
+    for findex, h, rendered in entries:
         _write_varint(buf, findex)
         buf.write(h)
-        _write_str(buf, text)
-        _write_varint(buf, len(opmap))
-        for op_idx, body_line in opmap.items():
+        _write_str(buf, rendered.text)
+        _write_varint(buf, len(rendered.oplines))
+        for op_idx, body_line in rendered.oplines.items():
             _write_varint(buf, op_idx)
             _write_varint(buf, body_line)
+        _write_varint(buf, rendered.body_start)
+        _write_varint(buf, len(rendered.spans))
+        for span in rendered.spans:
+            _write_symbol_span(buf, span)
+        _write_varint(buf, len(rendered.types))
+        for span in rendered.types:
+            _write_type_span(buf, span)
     return buf.getvalue()
 
 
-def _decode_dcac(payload: bytes) -> List[_CacheEntry]:
+def _decode_dcac(payload: bytes, version: int) -> List[_CacheEntry]:
     buf = BytesIO(payload)
     entries: List[_CacheEntry] = []
     for _ in range(_read_varint(buf)):
@@ -301,7 +368,14 @@ def _decode_dcac(payload: bytes) -> List[_CacheEntry]:
             op_idx = _read_varint(buf)
             body_line = _read_varint(buf)
             opmap[op_idx] = body_line
-        entries.append((findex, h, text, opmap))
+        spans: List[SymbolSpan] = []
+        types: List[TypeSpan] = []
+        body_start = 1
+        if version >= 2:
+            body_start = _read_varint(buf)
+            spans = [_read_symbol_span(buf) for _ in range(_read_varint(buf))]
+            types = [_read_type_span(buf) for _ in range(_read_varint(buf))]
+        entries.append((findex, h, RenderedSource(text, spans, opmap, types, body_start)))
     return entries
 
 
@@ -347,6 +421,7 @@ def save_database(
     source_path: str,
     class_results: Dict[str, Dict[int, Optional[str]]],
     opline_cache: Dict[int, Dict[int, int]],
+    spans_cache: Optional[Dict[int, RenderedSource]] = None,
     session: Optional[SessionState] = None,
 ) -> None:
     """Write a .cldb next to `source_path`, capturing `code`'s annotations and the
@@ -355,7 +430,7 @@ def save_database(
     chunks = [
         (TAG_SRCI, _encode_srci(code, source_path, source_hash, source_size)),
         (TAG_ANNO, _encode_anno(code)),
-        (TAG_DCAC, _encode_dcac(code, class_results, opline_cache)),
+        (TAG_DCAC, _encode_dcac(code, class_results, opline_cache, spans_cache)),
     ]
     if session is not None:
         chunks.append((TAG_SESS, _encode_sess(session)))
@@ -376,7 +451,7 @@ def load_database(path: str, *, code: Bytecode, source_path: str) -> DatabaseLoa
     with open(path, "rb") as f:
         data = f.read()
     try:
-        chunks = _unpack_file(data)
+        version, chunks = _unpack_file(data)
     except DatabaseError as e:
         result.warnings.append(str(e))
         return result
@@ -404,9 +479,9 @@ def load_database(path: str, *, code: Bytecode, source_path: str) -> DatabaseLoa
 
     dcac = chunks.get(TAG_DCAC)
     if dcac is not None:
-        for findex, stored_hash, text, opmap in _decode_dcac(dcac):
+        for findex, stored_hash, rendered in _decode_dcac(dcac, version):
             if _function_content_hash(code, findex) == stored_hash:
-                result.cache[findex] = (text, opmap)
+                result.cache[findex] = rendered
 
     sess = chunks.get(TAG_SESS)
     if sess is not None:
@@ -420,8 +495,7 @@ def inspect_database(path: str) -> DatabaseInfo:
     original bytecode file — used by the `crashlink db` CLI."""
     with open(path, "rb") as f:
         data = f.read()
-    chunks = _unpack_file(data)  # raises DatabaseError on bad magic/version
-    (format_version, _flags) = struct.unpack("<HB", data[4:7])
+    format_version, chunks = _unpack_file(data)  # raises DatabaseError on bad magic/version
 
     srci = chunks.get(TAG_SRCI)
     if srci is None:
@@ -442,7 +516,7 @@ def inspect_database(path: str) -> DatabaseInfo:
     cache_findices: List[int] = []
     dcac = chunks.get(TAG_DCAC)
     if dcac is not None:
-        cache_findices = [entry[0] for entry in _decode_dcac(dcac)]
+        cache_findices = [entry[0] for entry in _decode_dcac(dcac, format_version)]
 
     session: Optional[SessionState] = None
     sess = chunks.get(TAG_SESS)

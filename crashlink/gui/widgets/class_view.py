@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QKeyEvent, QTextCursor
 from PySide6.QtWidgets import QMenu, QWidget
 
 from ...pseudo.doc import RenderedSource, utf16_col
 from ...pseudo.symbols import SymbolKind, SymbolRef, SymbolSpan
 from .decomp_view import DecompView, to_str_col
+from .hover import hover_html
 from .ref_info import RefInfo
 
 
@@ -18,7 +19,7 @@ class ClassView(DecompView):
     """Renders all methods of a class together, emitting which function the cursor is in."""
 
     function_focused = Signal(int)  # findex when cursor moves to a new function
-    rename_requested = Signal(int, str)  # findex, name of the local under the cursor
+    rename_requested = Signal(int, object)  # findex, the local's SymbolRef (None when not on a local)
     #: findex, and what to find references to: a `SymbolRef`, or the selected text.
     xref_requested = Signal(int, object)
 
@@ -34,13 +35,17 @@ class ClassView(DecompView):
     def set_ref_info(self, refs: RefInfo) -> None:
         self._refs = refs
 
-    def _attach_spans(self, findex: int, text: str, rendered: Optional[RenderedSource]) -> None:
-        """Keep `rendered`'s symbols for the method shown as `text`. They only apply to
-        exactly the text they were rendered with, so anything else drops them."""
+    def _method_content(self, findex: int, text: str, rendered: Optional[RenderedSource]) -> List[str]:
+        """The lines of the method as shown, remembering `rendered`'s symbols for them.
+        Symbols only apply to exactly the text they were rendered with, and then the
+        rendered source says which of its lines are the function body. Text without
+        symbols (a placeholder or error the window wrote itself) is unwrapped by
+        `_method_lines`."""
         if rendered is not None and rendered.text == text:
-            self._spans[findex] = (rendered, wrapper_lines(text))
-        else:
-            self._spans.pop(findex, None)
+            self._spans[findex] = (rendered, rendered.body_start)
+            return rendered.body_lines()
+        self._spans.pop(findex, None)
+        return _method_lines(findex, text)
 
     def load_methods(
         self,
@@ -82,8 +87,7 @@ class ClassView(DecompView):
         self._spans = {}
 
         for findex, text in methods:
-            content = _method_lines(findex, text)
-            self._attach_spans(findex, text, spans.get(findex) if spans else None)
+            content = self._method_content(findex, text, spans.get(findex) if spans else None)
 
             start = len(lines)
             lines.extend(content)
@@ -122,9 +126,8 @@ class ClassView(DecompView):
         index = next((i for i, (_, _, fi) in enumerate(self._line_ranges) if fi == findex), None)
         if index is None:
             return
-        self._attach_spans(findex, text, rendered)
+        content = self._method_content(findex, text, rendered)
         start, end, _ = self._line_ranges[index]
-        content = _method_lines(findex, text)
         delta = len(content) - (end - start + 1)
 
         cursor_block = self.textCursor().blockNumber()
@@ -288,37 +291,42 @@ class ClassView(DecompView):
                 )
         return uses
 
-    def _rename_word(self) -> str:
+    def _rename_target(self) -> Optional[SymbolRef]:
+        """The local under the caret; renaming anything else is not offered."""
         span = self.symbol_at_cursor()
-        if span is not None and span.ref.kind == SymbolKind.LOCAL:
-            return span.ref.name
-        return self._word_at_cursor()
+        return span.ref if span is not None and span.ref.kind == SymbolKind.LOCAL else None
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if not event.modifiers():
             findex = self.findex_at_cursor()
             if event.key() == Qt.Key.Key_N and findex is not None:
-                self.rename_requested.emit(findex, self._rename_word())
+                self.rename_requested.emit(findex, self._rename_target())
                 return
             if event.key() == Qt.Key.Key_X and findex is not None:
                 self.xref_requested.emit(findex, self._xref_target())
                 return
         super().keyPressEvent(event)
 
-    def tooltip_at(self, cursor: QTextCursor) -> Optional[str]:
+    def tooltip_at_point(self, cursor: QTextCursor, viewport_pos: QPoint) -> Optional[str]:
+        """What the token or expression under the pointer is, from the symbols and
+        expression types the renderer recorded. Text without them (a function still
+        decompiling) has no tooltip."""
         if self._refs is None:
             return None
-        word_cursor = QTextCursor(cursor)
-        word_cursor.select(QTextCursor.SelectionType.WordUnderCursor)
-        word = word_cursor.selectedText()
-        if not word.isidentifier():
+        hovered = self.hovered_char(viewport_pos)
+        if hovered is None:
             return None
-        # Only names used as calls (`name(`); plain identifiers are locals or fields.
-        block_text = cursor.block().text()
-        after = block_text[word_cursor.selectionEnd() - cursor.block().position() :].lstrip()
-        if not after.startswith("("):
-            return None
-        return self._refs.method_tooltip(word, self._findex_at_line(cursor.blockNumber()))
+        block_no, qt_col = hovered
+        for start, end, findex in self._line_ranges:
+            if not start <= block_no <= end:
+                continue
+            entry = self._spans.get(findex)
+            if entry is None:
+                return None
+            rendered, offset = entry
+            line = self.document().findBlockByNumber(block_no).text()
+            return hover_html(self._refs, rendered, block_no - start + offset, to_str_col(line, qt_col))
+        return None
 
     def _context_actions(self, menu: QMenu) -> None:
         super()._context_actions(menu)
@@ -327,7 +335,7 @@ class ClassView(DecompView):
             return
         target = self._xref_target()
         menu.addAction("Cross-references\tX", lambda: self.xref_requested.emit(findex, target))
-        menu.addAction("Rename\tN", lambda: self.rename_requested.emit(findex, self._rename_word()))
+        menu.addAction("Rename\tN", lambda: self.rename_requested.emit(findex, self._rename_target()))
         menu.addAction("Comment\t/", self.comment_menu_requested.emit)
 
 

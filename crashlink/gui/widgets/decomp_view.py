@@ -6,7 +6,7 @@ import re
 from contextlib import contextmanager
 from typing import Callable, Iterator, List, Optional, Tuple, cast
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QContextMenuEvent,
@@ -467,11 +467,28 @@ class DecompView(QPlainTextEdit):
             super().keyPressEvent(event)
         # Drop all other keys (typing, paste, delete, etc.)
 
+    def hovered_char(self, viewport_pos: QPoint) -> Optional[Tuple[int, int]]:
+        """(block number, Qt column) of the character under the pointer, or None when it is
+        past the end of a line. `cursorForPosition` snaps to the nearest character
+        boundary, which is the one before the character only on its left half."""
+        cursor = self.cursorForPosition(viewport_pos)
+        col = cursor.positionInBlock()
+        if viewport_pos.x() < self.cursorRect(cursor).center().x():
+            col -= 1
+        if col < 0 or col >= len(cursor.block().text()):
+            return None
+        return cursor.blockNumber(), col
+
+    def tooltip_at_point(self, cursor: QTextCursor, viewport_pos: QPoint) -> Optional[str]:
+        """Rich-text hover for the pointer at `viewport_pos` (`cursor` is the nearest
+        boundary). Panes that know the character under the pointer override this."""
+        return self.tooltip_at(cursor)
+
     def event(self, event: QEvent) -> bool:
         if event.type() == QEvent.Type.ToolTip:
             help_event = cast(QHelpEvent, event)
             viewport_pos = self.viewport().mapFrom(self, help_event.pos())
-            text = self.tooltip_at(self.cursorForPosition(viewport_pos))
+            text = self.tooltip_at_point(self.cursorForPosition(viewport_pos), viewport_pos)
             if text:
                 QToolTip.showText(help_event.globalPos(), text, self)
             else:

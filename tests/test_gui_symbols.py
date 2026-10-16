@@ -17,7 +17,9 @@ from crashlink import pseudo
 from crashlink.core import Bytecode, Function
 from crashlink.decomp import IRFunction
 from crashlink.gui import main_window as gui
-from crashlink.gui.widgets.class_view import ClassView, wrapper_lines
+from crashlink.gui.widgets.class_view import ClassView
+from crashlink.gui.widgets.ref_info import RefInfo
+from crashlink.pseudo.doc import RenderedSource
 from crashlink.pseudo.symbols import SymbolKind, SymbolRef, SymbolSpan
 
 SOURCE = """class Shadow {
@@ -48,8 +50,8 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def _view_of(code: Bytecode, f: Function) -> tuple[ClassView, object]:
-    rendered = pseudo.pseudo_spans(IRFunction(code, f))
+def _view_of(code: Bytecode, f: Function, types: bool = False) -> tuple[ClassView, RenderedSource]:
+    rendered = pseudo.pseudo_spans(IRFunction(code, f), types=types)
     view = ClassView()
     view.resize(900, 500)
     view.load_methods("Shadow", [(f.findex.value, rendered.text)], spans={f.findex.value: rendered})
@@ -61,7 +63,7 @@ def _view_of(code: Bytecode, f: Function) -> tuple[ClassView, object]:
 def _place(view: ClassView, rendered, span) -> QPoint:
     """Put the caret inside `span` and return the middle of that token on screen."""
     start = view._line_ranges[0][0]
-    block = view.document().findBlockByNumber(start + span.line - wrapper_lines(rendered.text))
+    block = view.document().findBlockByNumber(start + span.line - rendered.body_start)
     left = QTextCursor(view.document())
     left.setPosition(block.position() + span.start)
     right = QTextCursor(view.document())
@@ -86,9 +88,11 @@ def test_a_local_and_a_field_of_the_same_name_are_different_symbols(app, code):
     assert set(by_kind) == {SymbolKind.LOCAL, SymbolKind.FIELD}
 
     _place(view, rendered, by_kind[SymbolKind.LOCAL])
-    assert view.symbol_at_cursor().ref.kind == SymbolKind.LOCAL
+    at = view.symbol_at_cursor()
+    assert at is not None and at.ref.kind == SymbolKind.LOCAL
     _place(view, rendered, by_kind[SymbolKind.FIELD])
-    assert view.symbol_at_cursor().ref.kind == SymbolKind.FIELD
+    at = view.symbol_at_cursor()
+    assert at is not None and at.ref.kind == SymbolKind.FIELD
     view.close()
 
 
@@ -230,3 +234,27 @@ def test_following_nothing_says_so(window, monkeypatch):
     window._on_follow_requested(1, None)
 
     assert shown and "No symbol" in shown[-1]
+
+
+def test_hovering_a_token_with_the_pointer_shows_its_tooltip(app, code):
+    f = _function(code, "Shadow.f")
+    view, rendered = _view_of(code, f, types=True)
+    view.set_ref_info(RefInfo(code))
+    local = next(s for s in rendered.spans if s.ref.kind == SymbolKind.LOCAL and not s.is_def)
+    pos = _place(view, rendered, local)
+
+    html = view.tooltip_at_point(view.cursorForPosition(pos), pos)
+
+    assert html is not None and "local" in html and "Int" in html
+    view.close()
+
+
+def test_hovering_blank_space_shows_nothing(app, code):
+    f = _function(code, "Shadow.f")
+    view, rendered = _view_of(code, f, types=True)
+    view.set_ref_info(RefInfo(code))
+    line_end = view.cursorRect(view.cursorForPosition(QPoint(2000, 5))).center()
+    pos = QPoint(line_end.x() + 300, line_end.y())
+
+    assert view.tooltip_at_point(view.cursorForPosition(pos), pos) is None
+    view.close()

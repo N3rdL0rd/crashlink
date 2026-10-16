@@ -36,13 +36,13 @@ class RefInfo:
         if isinstance(fn, Native):
             try:
                 return f"{fn.lib.resolve(self.code)}.{fn.name.resolve(self.code)}"
-            except Exception:
-                return None
+            except IndexError:
+                return None  # corrupt bytecode: the native's lib/name strRef is out of range
         if isinstance(fn, Function):
             try:
                 name = self.code.full_func_name(fn)
-            except Exception:
-                return None
+            except IndexError:
+                return None  # corrupt bytecode: a proto/field name's strRef is out of range
             if not name or "<none>" in name:
                 return None
             # `$Foo.__constructor__` reads as `Foo.new`, as in the pseudocode.
@@ -57,7 +57,9 @@ class RefInfo:
         if gindex not in self._globals:
             try:
                 self._globals[gindex] = self.code.const_str(gindex)
-            except Exception:
+            except (ValueError, TypeError, KeyError, IndexError):
+                # Expected: the global has no constant String initializer (ValueError/TypeError/
+                # KeyError); corrupt bytecode: a table index is out of range (IndexError).
                 self._globals[gindex] = None
         return self._globals[gindex]
 
@@ -88,8 +90,8 @@ class RefInfo:
             return None
         try:
             header = disasm.func_header(self.code, fn)
-        except Exception:
-            header = f"f@{findex}"
+        except IndexError:
+            header = f"f@{findex}"  # corrupt bytecode: a name/signature's table index is out of range
         kind = "native" if isinstance(fn, Native) else f"{len(fn.ops)} opcodes"
         return f"<b>{html.escape(header)}</b><br><span style='opacity:0.7'>{kind}</span>"
 
@@ -98,8 +100,8 @@ class RefInfo:
             return None
         try:
             type_label = disasm.type_name(self.code, self.code.global_types[gindex].resolve(self.code))
-        except Exception:
-            type_label = "?"
+        except IndexError:
+            type_label = "?"  # corrupt bytecode: the global's tIndex or a name's strRef is out of range
         text = f"<b>global g@{gindex}</b>: {html.escape(type_label)}"
         value = self.global_string(gindex)
         if value is not None:
@@ -115,44 +117,18 @@ class RefInfo:
         typ = self.code.types[tindex]
         try:
             summary = disasm.type_name(self.code, typ)
-        except Exception:
-            summary = f"t@{tindex}"
+        except IndexError:
+            summary = f"t@{tindex}"  # corrupt bytecode: a type name's strRef is out of range
         kind = type(typ.definition).__name__
         text = f"<b>t@{tindex}</b> {html.escape(summary)}<br><span style='opacity:0.7'>{kind}</span>"
         if isinstance(typ.definition, Obj):
             try:
                 fields = [f.name.resolve(self.code) for f in typ.definition.resolve_fields(self.code)]
-            except Exception:
+            except (IndexError, ValueError):
+                # Corrupt bytecode: a field name/superclass index is out of range, or the
+                # hierarchy is cyclic/invalid (resolve_fields' own ValueError).
                 fields = []
             if fields:
                 shown = ", ".join(fields[:12]) + (" ..." if len(fields) > 12 else "")
                 text += f"<br>fields: {html.escape(shown)}"
         return text
-
-    def method_tooltip(self, name: str, preferred: Optional[int] = None) -> Optional[str]:
-        """Signature for a method/function name in pseudocode, if it's unambiguous
-        (or matches a method of the class containing `preferred`)."""
-        si = self.code.search_index()
-        candidates: Dict[int, object] = {}
-        for fn in [*si.find_partial(name), *si.find(name)]:
-            candidates.setdefault(fn.findex.value, fn)
-        if not candidates:
-            return None
-        if len(candidates) > 1 and preferred is not None:
-            owner = self._owner(preferred)
-            same = [fi for fi in candidates if owner is not None and self._owner(fi) == owner]
-            if len(same) == 1:
-                return self.function_tooltip(same[0])
-        if len(candidates) == 1:
-            return self.function_tooltip(next(iter(candidates)))
-        return f"<b>{html.escape(name)}</b><br><span style='opacity:0.7'>{len(candidates)} functions with this name</span>"
-
-    def _owner(self, findex: int) -> Optional[str]:
-        fn = self.code.get_findex_map().get(findex)
-        if not isinstance(fn, Function):
-            return None
-        try:
-            full = self.code.full_func_name(fn)
-        except Exception:
-            return None
-        return full.rsplit(".", 1)[0].lstrip("$") if "." in full else None
