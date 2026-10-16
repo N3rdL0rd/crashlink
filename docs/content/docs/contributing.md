@@ -181,9 +181,23 @@ This is the final step, turning the optimized IR into Haxe code. Contributions h
 
 `pseudo()` and the other entry points return plain `str`. `pseudo_spans()` returns the same text as a `RenderedSource` that also says which program entity each token names (`SymbolRef`: a function, field, local, type, enum constructor, ...), which is what the GUI's double-click and cross-references use. Symbols are recorded by `pseudo/annotate.py` from the IR node an expression came from, and tagged with `doc.mark()` while rendering under `doc.marked()`. Outside that context `mark()` returns its text unchanged, so the `str` output is never affected. If you inspect the text of an already-rendered expression (a regex, `==`, `isidentifier()`), wrap it in `doc.strip()` so the check behaves the same with tags present.
 
+The package is split by theme; a module only ever imports from the modules above it in this list:
+
+* `pseudo/naming.py` — std/native naming: class identification, method registries, std-member access
+* `pseudo/casts.py` — type-kind checks, cast rendering, literal-type ascription
+* `pseudo/enums.py` — enum/switch helpers: case detection, exhaustiveness, pattern bindings
+* `pseudo/closures.py` — closure/capture analysis: lambda detection, context hoisting, adapters
+* `pseudo/hierarchy.py` — class hierarchy: ancestors, overrides, fields, generic parameters
+* `pseudo/strings.py` — text emission: string concatenation, interpolation, indentation, grouping
+* `pseudo/locals.py` — local/declaration analysis: reads/writes, assignment planning
+* `pseudo/members.py` — class member declarations: fields, properties, interfaces, externs
+* `pseudo/render.py` — the rendering core: `_expression_to_haxe`, `_generate_statements` and the other mutually recursive renderers
+* `pseudo/classes.py` — class/interface/enum rendering: `_class_body`, `_interface_pseudo`, closure bodies
+* `pseudo/api.py` — the public entry points: `pseudo`, `pseudo_oplines`, `pseudo_spans`, `decompile_file`, `stub_file`
+
 * **How to contribute:**
-  * To change how an Expression (like `IRArithmetic`, a subclass of `IRArithmetic`) is printed, modify `_expression_to_haxe`.
-  * To change how a Statement (like `IRConditional`, a subclass of `IRStatement`) is printed, modify `_generate_statements`.
+  * To change how an Expression (like `IRArithmetic`, a subclass of `IRArithmetic`) is printed, modify `_expression_to_haxe` in `pseudo/render.py`.
+  * To change how a Statement (like `IRConditional`, a subclass of `IRStatement`) is printed, modify `_generate_statements` in `pseudo/render.py`.
 
 For example, to change `if (cond)` to `if cond` (without parentheses), you would find this line in `_generate_statements`:
 `output_lines.append(f"{indent}if ({cond_str}) {")`

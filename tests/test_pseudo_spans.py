@@ -193,3 +193,89 @@ def test_a_method_header_is_its_own_definition(fixture_code):
     assert definition is not None
     line = rendered.text.split("\n")[definition.line]
     assert line[definition.start : definition.end] == "bump"
+
+
+ABSTRACT_SOURCE = """abstract Meters(Float) {
+    public function new(v:Float) { this = v; }
+    public function twice():Float { return this * 2; }
+}
+class BodyFixture {
+    static function main() { Sys.println(new Meters(1.5).twice()); }
+}"""
+
+
+def test_the_body_range_is_exact_for_an_abstract_wrapper(tmp_path):
+    if shutil.which("haxe") is None:
+        pytest.skip("haxe not installed")
+    from crashtest.behavior import compile_haxe
+
+    artifact, error = compile_haxe(ABSTRACT_SOURCE, "BodyFixture", tmp_path)
+    assert error is None, error
+    code = Bytecode.from_path(str(artifact))
+
+    wrapped = []
+    for f in code.functions:
+        rendered = pseudo.pseudo_spans(IRFunction(code, f))
+        header = rendered.text.split("\n")[0]
+        if header.startswith("abstract "):
+            wrapped.append(rendered)
+    assert wrapped, "no function rendered inside an abstract wrapper"
+    for rendered in wrapped:
+        lines = rendered.text.split("\n")
+        assert lines[-1] == "}"
+        assert rendered.body_lines() == lines[rendered.body_start : -1]
+        assert not rendered.body_lines()[0].startswith("abstract ")
+
+
+# ── Marker-mode parity at renderer text-inspection sites ─────────────────────
+#
+# The renderer decides parentheses, cast spelling and `@:privateAccess` splices by
+# inspecting already-rendered text; span markers (and, with `types=True`, a marker
+# wrap around every expression) must not change those decisions.
+
+PARITY_SOURCE = """class ParityFixture {
+    static function main() {
+        var a = [1, 2, 3];
+        Sys.println(a[0] + a.length);
+        var b = haxe.io.Bytes.ofString("hello");
+        Sys.println(b.getString(0, 2));
+    }
+}"""
+
+
+@pytest.fixture(scope="module")
+def parity_code(tmp_path_factory):
+    if shutil.which("haxe") is None:
+        pytest.skip("haxe not installed")
+    from crashtest.behavior import compile_haxe
+
+    artifact, error = compile_haxe(PARITY_SOURCE, "ParityFixture", tmp_path_factory.mktemp("parity"))
+    assert error is None, error
+    return Bytecode.from_path(str(artifact))
+
+
+def _assert_parity(code: Bytecode, full_name: str) -> None:
+    f = _function(code, full_name)
+    plain = pseudo.pseudo(IRFunction(code, f))
+    assert pseudo.pseudo_spans(IRFunction(code, f)).text == plain
+    assert pseudo.pseudo_spans(IRFunction(code, f), types=True).text == plain
+
+
+def test_native_call_receiver_is_not_reparenthesised(parity_code):
+    # `b.ucs2Length(0)` calls a std native on a marked local receiver: the receiver
+    # check must see through the span markers or it emits `(b).ucs2Length(0)`.
+    _assert_parity(parity_code, "$String.fromUCS2")
+
+
+def test_private_access_assignment_survives_type_spans(parity_code):
+    # With `types=True` the `@:privateAccess (...) = ...` assignment target is wrapped
+    # in an expression marker; the splice must unwrap it or it emits `(...) = ...`.
+    _assert_parity(parity_code, "hl.types.$ArrayBase.allocI32")
+
+
+def test_all_fixture_functions_render_identically_in_both_marker_modes(parity_code):
+    for f in parity_code.functions:
+        name = parity_code.full_func_name(f) or ""
+        if "ParityFixture" not in name:
+            continue
+        _assert_parity(parity_code, name)
