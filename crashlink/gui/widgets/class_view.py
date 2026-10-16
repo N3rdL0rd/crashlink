@@ -325,7 +325,9 @@ class ClassView(DecompView):
                 return None
             rendered, offset = entry
             line = self.document().findBlockByNumber(block_no).text()
-            return hover_html(self._refs, rendered, block_no - start + offset, to_str_col(line, qt_col))
+            return hover_html(
+                self._refs, rendered, block_no - start + offset, to_str_col(line, qt_col), self._theme
+            )
         return None
 
     def _context_actions(self, menu: QMenu) -> None:
