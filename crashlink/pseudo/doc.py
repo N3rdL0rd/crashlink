@@ -22,7 +22,9 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
-from .symbols import SymbolRef, SymbolSpan
+from .symbols import ExprType, SymbolRef, SymbolSpan, TypeSpan
+
+Tag = Union[SymbolRef, ExprType]
 
 OPEN = "\ue000"
 CLOSE = "\ue001"
@@ -38,7 +40,7 @@ class Text:
 
 @dataclass(frozen=True)
 class Sym:
-    ref: SymbolRef
+    ref: Tag
     body: "Doc"
     is_def: bool = False
 
@@ -58,10 +60,19 @@ class RenderedSource:
     text: str
     spans: List[SymbolSpan] = field(default_factory=list)
     oplines: Dict[int, int] = field(default_factory=dict)
+    types: List[TypeSpan] = field(default_factory=list)
+    #: Lines of `text` before the function body: the class wrapper's header. Its last
+    #: line closes the wrapper, so the body is `lines[body_start:-1]`.
+    body_start: int = 1
+
+    def body_lines(self) -> List[str]:
+        """The function's own lines, without the wrapper."""
+        return self.text.split("\n")[self.body_start : -1]
 
     def __post_init__(self) -> None:
         self._by_line: Optional[Dict[int, List[SymbolSpan]]] = None
         self._by_ref: Optional[Dict[SymbolRef, List[SymbolSpan]]] = None
+        self._types_by_line: Optional[Dict[int, List[TypeSpan]]] = None
 
     def _index(self) -> Dict[int, List[SymbolSpan]]:
         if self._by_line is None:
@@ -101,72 +112,103 @@ class RenderedSource:
         """The declaring span of `ref` in this text, if it declares one."""
         return next((s for s in self.spans_of(ref) if s.is_def), None)
 
+    def type_spans_at(self, line: int, col: int) -> List[TypeSpan]:
+        """Every expression covering `col` on `line`, innermost first."""
+        if self._types_by_line is None:
+            by_line: Dict[int, List[TypeSpan]] = {}
+            for span in self.types:
+                by_line.setdefault(span.line, []).append(span)
+            self._types_by_line = by_line
+        hits = [s for s in self._types_by_line.get(line, []) if s.start <= col < s.end]
+        hits.sort(key=lambda s: s.end - s.start)
+        return hits
+
+    def type_at(self, line: int, col: int) -> Optional[TypeSpan]:
+        """The innermost expression covering `col` on `line`, if any."""
+        hits = self.type_spans_at(line, col)
+        return hits[0] if hits else None
+
 
 def plain(doc: Doc) -> str:
-    if isinstance(doc, Text):
-        return doc.text
-    if isinstance(doc, Sym):
-        return plain(doc.body)
-    return "".join(plain(p) for p in doc.parts)
+    return render(doc).text
+
+
+@dataclass(frozen=True)
+class _Close:
+    line: int
+    col: int
+    tag: Tag
+    is_def: bool
 
 
 def render(doc: Doc) -> RenderedSource:
-    """Flatten a doc to text and spans."""
+    """Flatten a doc to text and spans. Iterative: a deeply nested expression (a long
+    `a + b + ...` chain) nests one tag per level and must not hit the recursion limit."""
     chunks: List[str] = []
     spans: List[SymbolSpan] = []
-    state = [0, 0]  # line, col
-
-    def advance(text: str) -> None:
-        chunks.append(text)
-        newlines = text.count("\n")
-        if newlines:
-            state[0] += newlines
-            state[1] = len(text) - text.rindex("\n") - 1
-        else:
-            state[1] += len(text)
-
-    def walk(node: Doc) -> None:
-        if isinstance(node, Text):
-            advance(node.text)
-        elif isinstance(node, Concat):
-            for part in node.parts:
-                walk(part)
-        else:
-            start_line, start_col = state
-            walk(node.body)
-            if state[0] == start_line and state[1] > start_col:
-                spans.append(SymbolSpan(start_line, start_col, state[1], node.ref, node.is_def))
+    types: List[TypeSpan] = []
+    line = col = 0
+    # Work items: a node to emit, or the close of a symbol opened earlier.
+    todo: List[Union[Doc, _Close]] = [doc]
+    while todo:
+        item = todo.pop()
+        if isinstance(item, _Close):
             # A symbol never spans lines in practice; a multi-line body gets no span.
-
-    walk(doc)
-    return RenderedSource("".join(chunks), spans)
+            if line == item.line and col > item.col:
+                if isinstance(item.tag, ExprType):
+                    types.append(TypeSpan(item.line, item.col, col, item.tag))
+                else:
+                    spans.append(SymbolSpan(item.line, item.col, col, item.tag, item.is_def))
+        elif isinstance(item, Text):
+            text = item.text
+            chunks.append(text)
+            newlines = text.count("\n")
+            if newlines:
+                line += newlines
+                col = len(text) - text.rindex("\n") - 1
+            else:
+                col += len(text)
+        elif isinstance(item, Concat):
+            todo.extend(reversed(item.parts))
+        elif isinstance(item, Sym):
+            todo.append(_Close(line, col, item.ref, item.is_def))
+            todo.append(item.body)
+    return RenderedSource("".join(chunks), spans, types=types)
 
 
 # ── Marker mode ───────────────────────────────────────────────────────────────
 
-_table: ContextVar[Optional[List[Tuple[SymbolRef, bool]]]] = ContextVar("pseudo_symbol_table", default=None)
-_ids: ContextVar[Dict[Tuple[SymbolRef, bool], int]] = ContextVar("pseudo_symbol_ids")
+_table: ContextVar[Optional[List[Tuple[Tag, bool]]]] = ContextVar("pseudo_symbol_table", default=None)
+_ids: ContextVar[Dict[Tuple[Tag, bool], int]] = ContextVar("pseudo_symbol_ids")
+_types: ContextVar[bool] = ContextVar("pseudo_expression_types", default=False)
 
 
 def marking() -> bool:
     return _table.get() is not None
 
 
+def marking_types() -> bool:
+    """Whether expressions are being tagged with their types as well as their symbols."""
+    return _table.get() is not None and _types.get()
+
+
 @contextmanager
-def marked() -> Iterator[List[Tuple[SymbolRef, bool]]]:
-    """Make `mark()` wrap symbol tokens for the duration; yields the symbol table
-    `parse` needs."""
-    table: List[Tuple[SymbolRef, bool]] = []
+def marked(types: bool = False) -> Iterator[List[Tuple[Tag, bool]]]:
+    """Make `mark()` wrap symbol tokens for the duration (and, with `types`, every
+    expression with the type it produces); yields the symbol table `parse` needs."""
+    table: List[Tuple[Tag, bool]] = []
     token = _table.set(table)
     ids_token = _ids.set({})
+    types_token = _types.set(types)
     try:
         yield table
     finally:
+        _types.reset(types_token)
         _ids.reset(ids_token)
         _table.reset(token)
 
 
-def mark(text: str, ref: Optional[SymbolRef], is_def: bool = False) -> str:
+def mark(text: str, ref: Optional[Tag], is_def: bool = False) -> str:
     """`text`, tagged as naming `ref` when marker mode is on; `text` untouched otherwise.
 
     The same symbol always gets the same id, so rendering one expression twice yields
@@ -196,11 +238,11 @@ def strip(text: str) -> str:
     return _MARKER_RX.sub("", text)
 
 
-def parse(text: str, table: Sequence[Tuple[SymbolRef, bool]]) -> Doc:
+def parse(text: str, table: Sequence[Tuple[Tag, bool]]) -> Doc:
     """Turn a marked string into a `Doc`. A closing marker with no opener is dropped, and
     an opener never closed (a renderer that sliced a marked string) folds back in as text."""
     stack: List[List[Doc]] = [[]]
-    refs: List[Tuple[SymbolRef, bool]] = []
+    refs: List[Tuple[Tag, bool]] = []
     at = 0
     for m in _MARKER_RX.finditer(text):
         if m.start() > at:
@@ -223,7 +265,7 @@ def parse(text: str, table: Sequence[Tuple[SymbolRef, bool]]) -> Doc:
     return parts[0] if len(parts) == 1 else Concat(tuple(parts))
 
 
-def render_marked(text: str, table: Sequence[Tuple[SymbolRef, bool]]) -> RenderedSource:
+def render_marked(text: str, table: Sequence[Tuple[Tag, bool]]) -> RenderedSource:
     return render(parse(text, table))
 
 
@@ -243,6 +285,7 @@ __all__ = [
     "mark",
     "marked",
     "marking",
+    "marking_types",
     "parse",
     "plain",
     "render",

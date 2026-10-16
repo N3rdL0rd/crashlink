@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import re
 import weakref
-from typing import Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 from ..core import Bytecode, Enum, Function, Native, Obj, Type
 from ..decomp import IRFunction
 from ..decomp.ir import IRCall, IRConst, IREnumConstruct, IRExpression, IRField, IRLocal, IRNew
-from .doc import mark, marking
-from .symbols import SymbolRef
+from ..errors import MalformedBytecode
+from .doc import mark, marking, marking_types
+from .symbols import ExprType, SymbolRef
+from .typetext import describe
 
 _PATH_RX = re.compile(r"[\w$]+(?:\.[\w$]+)*")
 
@@ -63,13 +65,17 @@ def member_ref(code: Bytecode, obj: Obj, name: str) -> Optional[SymbolRef]:
             try:
                 if proto.name.resolve(code) == name:
                     return SymbolRef.function(proto.findex.value)
-            except Exception:
+            except IndexError:
+                # Corrupt bytecode: the proto's name index is out of range —
+                # drop this candidate; a marker must never cost the text.
                 continue
         for slot, fld in enumerate(cls.fields):
             try:
                 if fld.name.resolve(code) != name:
                     continue
-            except Exception:
+            except IndexError:
+                # Corrupt bytecode: the field's name index is out of range —
+                # drop this candidate; a marker must never cost the text.
                 continue
             ti = tindex_of(code, cls)
             if ti is not None:
@@ -182,7 +188,9 @@ def annotate_expression(
             try:
                 if construct.name.resolve(code) != expr.construct_name:
                     continue
-            except Exception:
+            except IndexError:
+                # Corrupt bytecode: the construct's name index is out of range —
+                # drop this candidate; a marker must never cost the text.
                 continue
             return _mark_first_call(
                 text, [expr.construct_name], SymbolRef.enum_construct(expr.enum_type_idx.value, cidx)
@@ -190,3 +198,23 @@ def annotate_expression(
         return text
 
     return text
+
+
+def annotate_type(expr: IRExpression, text: str, code: Bytecode) -> str:
+    """`text`, the rendering of `expr`, tagged with the type the expression produces."""
+    if not marking_types() or not text:
+        return text
+    return annotate_with_type(expr.get_type, text, code)
+
+
+def annotate_with_type(get_type: Callable[[], Type], text: str, code: Bytecode) -> str:
+    """Tag `text` with the type `get_type()` returns, when it can be computed."""
+    try:
+        typ = get_type()
+    except (IndexError, ValueError, MalformedBytecode):
+        # Corrupt bytecode: a type/name table index is out of range or a
+        # reference has no context — drop the type tag, never the text. Anything
+        # else is our own bug and must propagate.
+        return text
+    source, kind = describe(code, typ)
+    return mark(text, ExprType(source, kind))

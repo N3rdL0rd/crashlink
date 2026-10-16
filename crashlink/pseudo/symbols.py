@@ -68,3 +68,22 @@ class SymbolSpan:
     end: int
     ref: SymbolRef
     is_def: bool = False
+
+
+@dataclass(frozen=True)
+class ExprType:
+    """Tag for an expression's type: `source` is how Haxe spells it, `kind` the
+    HashLink kind (`I32`, `Obj`, `Fun`, ...)."""
+
+    source: str
+    kind: str = ""
+
+
+@dataclass(frozen=True)
+class TypeSpan:
+    """The expression at `[start, end)` on `line` produces a value of `type`."""
+
+    line: int
+    start: int
+    end: int
+    type: ExprType
