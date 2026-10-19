@@ -282,11 +282,11 @@ def _find_type_by_haxe_name(code: Bytecode, haxe_name: str) -> Optional[Type]:
 def _base_class_for_virtual_method(func: "Function", code: Bytecode) -> Optional[str]:
     """If `func` is an overridden virtual method, return the Haxe name of the
     superclass that originally declared it."""
-    parts = _func_name_parts(func, code)
-    if not parts:
-        return None
-    class_name, method_name = parts
     try:
+        parts = _func_name_parts(func, code)
+        if not parts:
+            return None
+        class_name, method_name = parts
         typ = _find_type_by_haxe_name(code, class_name)
         if typ is None:
             return None
