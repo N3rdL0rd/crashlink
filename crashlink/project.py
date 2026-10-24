@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
 
 from . import abstracts, disasm, typeinit
 from .core import Bytecode, Enum, Function, Obj, is_static_name
-from .std_types import STD_TYPES
+from .stdlib.types import STD_TYPES
 
 if TYPE_CHECKING:
     from . import pseudo

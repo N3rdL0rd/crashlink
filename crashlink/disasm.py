@@ -42,7 +42,7 @@ from .core import (
 from .opcodes import opcodes
 from . import typeinit
 from .hxbit import is_serializable_virtual
-from .std_types import STD_TYPES, STD_WRAPPED
+from .stdlib.types import STD_TYPES, STD_WRAPPED
 
 
 # Kinds of Haxe's basic value types, which can't hold null.

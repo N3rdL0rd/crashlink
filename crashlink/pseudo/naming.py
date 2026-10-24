@@ -12,7 +12,7 @@ from ..core import Bytecode, Obj, Type, Function, Fun, Native, Struct, destatici
 from .. import disasm
 from ..errors import MalformedBytecode
 from .. import abstracts, rtti_meta
-from ..std_types import STD_TYPES
+from ..stdlib.types import STD_TYPES
 from ..decomp import IRFunction, IRExpression, IRConst, IRCall
 
 
@@ -263,7 +263,7 @@ def _private_std_members(class_name: str) -> Optional[FrozenSet[str]]:
     unqualified, and a secondary type (`hl.CoreType`) drops its module, so a name that isn't
     a path in the table matches by simple name; an HL specialisation of a generic class
     (`ArrayBytes_Int`) by the class it specialises."""
-    from ..std_private import PRIVATE_STD_MEMBERS
+    from ..stdlib.private import PRIVATE_STD_MEMBERS
 
     if class_name in PRIVATE_STD_MEMBERS:
         return PRIVATE_STD_MEMBERS[class_name]
@@ -398,7 +398,7 @@ def _call_renders_as_std_stub(func: "Function", call: "IRCall", code: Bytecode) 
 
 def _std_native_api(native: Native, code: Bytecode) -> Optional[Tuple[str, str, bool, bool]]:
     """The std method a native implements, as (type, method, is_static, is_public), if it's one."""
-    from ..std_natives import STD_NATIVES
+    from ..stdlib.natives import STD_NATIVES
 
     return STD_NATIVES.get((native.lib.resolve(code), native.name.resolve(code)))
 

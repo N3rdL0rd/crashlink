@@ -12,7 +12,7 @@ from .. import disasm
 from ..errors import MalformedBytecode
 from .. import abstracts, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
 from ..classgenerics import class_generics
-from ..std_types import STD_TYPES
+from ..stdlib.types import STD_TYPES
 from ..decomp import (
     STATIC_INIT_UNRECOVERABLE,
     IRClass,

@@ -22,7 +22,7 @@ from typing import Dict, FrozenSet, List, Optional, Tuple
 
 from . import disasm, mapargs
 from .core import Bytecode, Fun, Function, Obj, Type, destaticify
-from .std_types import STD_TYPES
+from .stdlib.types import STD_TYPES
 
 IMPL_SUFFIX = "_Impl_"
 

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from ..core import Bytecode, Fun, Function, Obj, Opcode, Type, destaticify, fIndex, tIndex
-from ..std_inline import is_std_inline
+from ..stdlib.inline import is_std_inline
 from .ir import (
     IRInlineCall,
     IRArithmetic,
