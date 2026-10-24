@@ -30,12 +30,12 @@ except ImportError:
         "Cannot run dehl without lief and capstone installed. Try `pip install crashlink[extras]` or `pip install lief capstone`."
     )
 from .binary import HLCBinary, _resolve_plt_targets
-from .context import DehlcContext
+from .pools import DehlcContext
 from .functions import _recover_functions, _recover_native_names
 from .globals import _recover_globals
 from .init_analysis import analyse_init_types
 from .pools import _recover_constant_pools
-from .strings import _dwarf_local_names, _recover_hash_names, _recover_strings
+from .pools import _dwarf_local_names, _recover_hash_names, _recover_strings
 from .types import _parse_type, recover_type_order
 
 

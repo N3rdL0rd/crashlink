@@ -6,23 +6,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from . import (
-    exports,
-    file_info,
-    globals_window,
-    hlasm_edit,
-    inlines_window,
-    internals,
-    lookups,
-    strings_window,
-)
+from . import exports, file_info, hlasm_edit, inlines_window, internals, lookups, tables
 
 if TYPE_CHECKING:
     from ..main_window import MainWindow
 
 _FEATURES = (
-    strings_window,
-    globals_window,
+    tables,
     inlines_window,
     file_info,
     internals,

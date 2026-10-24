@@ -95,7 +95,7 @@ def test_types_view_propagates_unexpected_errors(qapp, code, monkeypatch):
 
 def test_global_rows_question_mark_on_corrupt_type_index(code, monkeypatch):
     import crashlink.disasm as disasm
-    from crashlink.gui.features.globals_window import _global_rows
+    from crashlink.gui.features.tables import _global_rows
 
     if not code.global_types:
         pytest.skip("fixture has no globals")
@@ -105,7 +105,7 @@ def test_global_rows_question_mark_on_corrupt_type_index(code, monkeypatch):
 
 
 def test_initial_value_falls_back_when_not_a_constant_string(code, monkeypatch):
-    from crashlink.gui.features.globals_window import _initial_value
+    from crashlink.gui.features.tables import _initial_value
 
     if not code.global_types:
         pytest.skip("fixture has no globals")

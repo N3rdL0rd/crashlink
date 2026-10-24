@@ -22,7 +22,7 @@ from .binary import (
     _pe_import_map,
     _relocated_table_slots,
 )
-from .context import DehlcContext
+from .pools import DehlcContext
 from .types import _sign_from_recon_type
 
 

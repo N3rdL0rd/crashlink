@@ -19,7 +19,7 @@ from ... import disasm
 from ...core import Bytecode, Enum, Fun, Native, Obj
 from ...pseudo.doc import RenderedSource
 from ...pseudo.symbols import SymbolKind, SymbolRef, SymbolSpan, TypeSpan
-from ...pseudo.typetext import describe
+from ...pseudo.symbols import describe
 from ..themes import Theme
 from .ref_info import RefInfo
 

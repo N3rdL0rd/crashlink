@@ -20,7 +20,7 @@ from ..decomp.ir import IRCall, IRConst, IREnumConstruct, IRExpression, IRField,
 from ..errors import MalformedBytecode
 from .doc import mark, marking, marking_types
 from .symbols import ExprType, SymbolRef
-from .typetext import describe
+from .symbols import describe
 
 _PATH_RX = re.compile(r"[\w$]+(?:\.[\w$]+)*")
 

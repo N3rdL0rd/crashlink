@@ -1501,7 +1501,7 @@ class Commands(BaseCommands):
         throw (null checks, checked casts); `--explain` prints the canonical form the hash
         is computed from. A function the model cannot cover prints why instead."""
         from .equivalence import signature
-        from .equivalence.explain import explain
+        from .equivalence.digest import explain
 
         flags = {a for a in args if a.startswith("--")}
         rest = [a for a in args if not a.startswith("--")]

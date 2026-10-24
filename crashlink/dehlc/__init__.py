@@ -17,7 +17,7 @@ reconstruct    Top-level pipeline (`code_from_bin`)
 """
 
 from .binary import HLCBinary, disasm_function
-from .context import DehlcContext
+from .pools import DehlcContext
 from .reconstruct import code_from_bin
 
 __all__ = ["HLCBinary", "DehlcContext", "code_from_bin", "disasm_function"]

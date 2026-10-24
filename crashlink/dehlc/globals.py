@@ -35,7 +35,7 @@ from .binary import (
     HL_TYPE_GLOBAL_PREFIX,
     HL_VALUE_GLOBAL_PREFIX,
 )
-from .context import DehlcContext
+from .pools import DehlcContext
 from .init_analysis import InitTypesAnalysis
 from .types import _dwarf_def_die_order, _dwarf_global_types, _hl_type_from_c_desc
 

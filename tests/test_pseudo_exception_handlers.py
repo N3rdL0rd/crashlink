@@ -50,29 +50,29 @@ def _obj_named(code: Bytecode, name: str) -> Obj:
     raise AssertionError(f"no Obj named {name}")
 
 
-# ── typetext.type_text ────────────────────────────────────────────────────────
+# ── symbols.type_text ────────────────────────────────────────────────────────
 
 
 def test_type_text_kind_fallback_on_corrupt_name_index(clazz):
-    from crashlink.pseudo import typetext
+    from crashlink.pseudo import symbols
 
     typ = next(t for t in clazz.types if isinstance(t.definition, Obj))
     obj = typ.definition
     original = obj.name.value
     obj.name.value = 10**9
     try:
-        assert typetext.type_text(clazz, typ) == "Obj"
+        assert symbols.type_text(clazz, typ) == "Obj"
     finally:
         obj.name.value = original
 
 
 def test_type_text_propagates_unexpected_errors(clazz, monkeypatch):
-    from crashlink.pseudo import typetext
+    from crashlink.pseudo import symbols
 
     typ = next(t for t in clazz.types if isinstance(t.definition, Obj))
     monkeypatch.setattr(disasm, "type_to_haxe", _raising(RuntimeError("bug")))
     with pytest.raises(RuntimeError):
-        typetext.type_text(clazz, typ)
+        symbols.type_text(clazz, typ)
 
 
 # ── annotate.annotate_with_type ───────────────────────────────────────────────
