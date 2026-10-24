@@ -306,7 +306,7 @@ def _rebuilt_templates(code: Bytecode, surviving: List[InlineTemplate]) -> List[
     debug positions find (see `inlines.InlineFinder`). In a copy, the code on the
     function's own lines is the body; what the caller computed in place, and the
     constants that differ between copies, are its arguments."""
-    from ..inlines import InlineFinder
+    from .inlines import InlineFinder
 
     if not code.debugfiles or not code.debugfiles.value:
         return []
@@ -418,7 +418,7 @@ def _varying_constant_ops(finder: Any, site: Any, shape: Any) -> Set[int]:
     """Opcodes of `site` loading a constant that other copies of the same shape
     load differently: an argument, not part of the body. Counts constants the
     way `InlineFinder._canonical` indexes them."""
-    from ..inlines import _VALUE_KINDS
+    from .inlines import _VALUE_KINDS
     from ..opcodes import opcodes
 
     varying = {index for index, _, _ in shape.varying_constants}

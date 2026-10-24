@@ -4,8 +4,8 @@ import subprocess
 import pytest
 
 from crashlink import Bytecode
-from crashlink import inlines
-from crashlink.inlines import InlineFinder
+from crashlink.decomp import inlines
+from crashlink.decomp.inlines import InlineFinder
 
 _UTIL = """class Util {
     public static inline function scale(v:Float, k:Int):Float {

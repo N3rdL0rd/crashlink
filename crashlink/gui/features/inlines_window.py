@@ -1,5 +1,5 @@
 """Inlined Functions window: bodies the Haxe compiler inlined, found from debug positions
-(see `crashlink.inlines`), with how often each was copied and its parameter types. The
+(see `crashlink.decomp.inlines`), with how often each was copied and its parameter types. The
 lower pane has the selected body's shapes and one disassembled copy of each; Enter / X
 lists every copy, grouped by shape, to jump to. Search › Inlined Copies in Function
 lists the copies inside the focused function."""
@@ -13,7 +13,7 @@ from PySide6.QtGui import QAction, QFont, QGuiApplication
 from PySide6.QtWidgets import QMenu, QPlainTextEdit, QSplitter, QVBoxLayout, QWidget
 
 from ...core import Bytecode
-from ...inlines import InlinedFunction, InlineFinder, describe, location, signature
+from ...decomp.inlines import InlinedFunction, InlineFinder, describe, location, signature
 from ..widgets.table_view import FilterTable
 from ..widgets.xref_panel import XrefGroup, XrefSite
 

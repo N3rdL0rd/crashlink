@@ -31,9 +31,9 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-from .core import Bytecode, Function, Opcode, Reg, Regs, Void
-from .decomp.cfg import CFGraph, CFNode
-from .opcodes import opcodes
+from ..core import Bytecode, Function, Opcode, Reg, Regs, Void
+from .cfg import CFGraph, CFNode
+from ..opcodes import opcodes
 
 #: Lines further apart than this within one site belong to different bodies (one
 #: inlined into the other).
@@ -628,7 +628,7 @@ class InlineFinder:
     def annotate(self, site: InlineSite, context: int = 2) -> str:
         """Disassembly of a copy (with `context` opcodes around it), each opcode tagged with
         where it comes from: the inlined body, a body nested in it, or the caller."""
-        from .disasm import pseudo_from_op
+        from ..disasm import pseudo_from_op
 
         func = self.code.fn(site.findex)
         assert isinstance(func, Function) and func.debuginfo is not None
@@ -656,7 +656,7 @@ class InlineFinder:
         return "\n".join(lines)
 
     def _type_name(self, func: Function, reg: int) -> str:
-        from .disasm import type_name
+        from ..disasm import type_name
 
         return type_name(self.code, func.regs[reg].resolve(self.code))
 

@@ -687,7 +687,7 @@ def search_main(argv: List[str]) -> None:
 
 
 def inlines_main(argv: List[str]) -> None:
-    from . import inlines
+    from .decomp import inlines
 
     parser = argparse.ArgumentParser(
         description=(
@@ -2841,7 +2841,7 @@ class Commands(BaseCommands):
           inlines at <file:line> [annotate]  every shape of the body at a line, optionally disassembled
           inlines fn <findex>                the inlined copies inside one function
         """
-        from . import inlines
+        from .decomp import inlines
 
         if not self.code.has_debug_info:
             print("No debug info in bytecode!")

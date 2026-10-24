@@ -124,7 +124,7 @@ from .opt.strings import (
 from .opt.chains import IRChainAssignFolder
 from .opt.castcheck import IRCastCheckRecovery, IRDowncastRecovery
 from .opt.postinc import IRPostIncrementRecovery
-from .opt.stringalloc import IRStringAllocInliner
+from .opt.strings import IRStringAllocInliner
 from .opt.pos import IRPosInfosFolder
 from .opt.arrays import (
     IRNativeArrayAllocOptimizer,
