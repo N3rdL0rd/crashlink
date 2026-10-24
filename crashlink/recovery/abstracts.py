@@ -20,9 +20,10 @@ import weakref
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
-from . import disasm, mapargs
-from .core import Bytecode, Fun, Function, Obj, Type, destaticify
-from .stdlib.types import STD_TYPES
+from .. import disasm
+from ..core import Bytecode, Fun, Function, Obj, Type, destaticify
+from ..stdlib.types import STD_TYPES
+from . import typeargs
 
 IMPL_SUFFIX = "_Impl_"
 
@@ -98,9 +99,9 @@ class Abstract:
         annotation = disasm._haxe_annotation(code, self.underlying)
         # A wrapped map has the value type its methods' uses of the value show.
         for findex in sorted(self.instance):
-            value = mapargs.value_type(code, ("r", findex, 0))
+            value = typeargs.value_type(code, ("r", findex, 0))
             if value is not None:
-                return mapargs.refine(annotation, value)
+                return typeargs.refine_map(annotation, value)
         return annotation
 
     def _underlying_elem_type(self, code: Bytecode) -> Optional[Type]:
@@ -109,7 +110,7 @@ class Abstract:
         definition = self.underlying.definition if self.underlying is not None else None
         if not isinstance(definition, Obj) or definition.name.resolve(code) != "hl.types.ArrayObj":
             return None
-        from .decomp.opt.arraytypes import function_param_elem_types, function_return_elem_type
+        from ..decomp.opt.arraytypes import function_param_elem_types, function_return_elem_type
 
         found: List[Optional[Type]] = []
         for findex in sorted(self.instance):

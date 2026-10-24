@@ -1,6 +1,6 @@
 """Self-check for the hxsl shader unserializer — pure, no bytecode fixture."""
 
-from crashlink.hxsl import HaxeUnserializer, HxEnum, parse_shader, shader_header
+from crashlink.recovery.hxsl import HaxeUnserializer, HxEnum, parse_shader, shader_header
 
 
 def test_unserialize_primitives_and_string_cache():
@@ -53,7 +53,7 @@ def test_parse_shader_header_smoke():
 
 
 def test_render_shader_body():
-    from crashlink.hxsl import HxEnum, Shader, render_shader
+    from crashlink.recovery.hxsl import HxEnum, Shader, render_shader
 
     var = {  # @param var amount : Float
         "name": "amount",

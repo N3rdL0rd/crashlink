@@ -28,7 +28,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
 
-from . import abstracts, disasm, typeinit
+from .recovery import abstracts, typeinit
+from . import disasm
 from .core import Bytecode, Enum, Function, Obj, is_static_name
 from .stdlib.types import STD_TYPES
 

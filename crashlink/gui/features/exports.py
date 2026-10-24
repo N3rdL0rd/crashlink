@@ -207,7 +207,7 @@ class _Exporter(QObject):
         folder = QFileDialog.getExistingDirectory(self.mw, "Write Recovered Shaders Into")
         if not folder:
             return
-        from ... import hxsl
+        from ...recovery import hxsl
 
         def work() -> str:
             shaders = hxsl.find_shaders(code)

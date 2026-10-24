@@ -10,8 +10,8 @@ from .doc import strip
 from ..core import Bytecode, Obj, Function, Fun, Native, Enum, Packed, destaticify, Virtual
 from .. import disasm
 from ..errors import MalformedBytecode
-from .. import abstracts, ifacenames, mapargs, rtti_meta, hxbit, hxsl, typeinit
-from ..classgenerics import class_generics
+from ..recovery import abstracts, interfaces, typeargs, metadata, hxsl, typeinit
+from ..recovery.typeargs import class_generics
 from ..stdlib.types import STD_TYPES
 from ..decomp import (
     STATIC_INIT_UNRECOVERABLE,
@@ -348,13 +348,13 @@ def _enum_pseudo(enum_def: "Enum", code: Bytecode, name: Optional[str] = None, p
     """Generate a Haxe enum declaration from a HashLink Enum definition."""
     if name is None:
         name = destaticify(disasm._enum_name(code, enum_def))
-    enum_meta = rtti_meta.for_type(code, enum_def.name.resolve(code)) if enum_def.name.value else None
-    type_meta = rtti_meta.render_entries(enum_meta.type) if enum_meta is not None else ""
+    enum_meta = metadata.for_type(code, enum_def.name.resolve(code)) if enum_def.name.value else None
+    type_meta = metadata.render_entries(enum_meta.type) if enum_meta is not None else ""
     lines = [f"{type_meta}{private}enum {name} {{"]
     for index, construct in enumerate(enum_def.constructs):
         cname = disasm.enum_construct_name(code, enum_def, index)
         member_meta = (
-            rtti_meta.render_entries(enum_meta.fields[cname])
+            metadata.render_entries(enum_meta.fields[cname])
             if enum_meta is not None and enum_meta.fields.get(cname)
             else ""
         )
@@ -508,7 +508,7 @@ def _class_body(
                 header += f"<{', '.join(_scope_text(code, arg) for arg in super_args)}>"
     # A class hxbit's `Serializable` macro rewrote is rendered as written:
     # without the members the macro generates again on recompile.
-    serializable = hxbit.serializable_class(ir_class)
+    serializable = metadata.serializable_class(ir_class)
     static_methods = ir_class.static_methods
     methods = ir_class.methods
     static_fields = ir_class.static_fields
@@ -523,15 +523,15 @@ def _class_body(
     ]
     if serializable is not None:
         if serializable.root:
-            header += " implements hxbit.Serializable"
-        static_methods = [m for m in static_methods if not hxbit.is_generated_method(m)]
-        methods = [m for m in methods if not hxbit.is_generated_method(m)]
-        static_fields = [f for f in static_fields if not hxbit.is_generated_field(code, f[0], f[1], True)]
-        fields = [f for f in fields if not hxbit.is_generated_field(code, f[0], f[1], False)]
+            header += " implements metadata.Serializable"
+        static_methods = [m for m in static_methods if not metadata.is_generated_method(m)]
+        methods = [m for m in methods if not metadata.is_generated_method(m)]
+        static_fields = [f for f in static_fields if not metadata.is_generated_field(code, f[0], f[1], True)]
+        fields = [f for f in fields if not metadata.is_generated_field(code, f[0], f[1], False)]
         for method in static_methods + methods:
-            hxbit.restore_serialize_override(method)
+            metadata.restore_serialize_override(method)
             if serializable.root and code.partial_func_name(method.func) == "__constructor__":
-                hxbit.strip_uid_prologue(method)
+                metadata.strip_uid_prologue(method)
     header += " {"
 
     anon_funcs: Dict[int, "Function"] = {}
@@ -639,7 +639,7 @@ def _class_body(
     for ref_set in getattr(ir_class, "static_field_init_refs", {}).values():
         referenced_classes.update(ref_set - {class_name})
     for implemented in typeinit.implemented(code, ir_class.dynamic):
-        if implemented.name not in STD_TYPES and implemented.name != "hxbit.Serializable":
+        if implemented.name not in STD_TYPES and implemented.name != "metadata.Serializable":
             referenced_classes.add(destaticify(implemented.obj.name.resolve(code)))
     if module is not None:
         # A project declares every named enum in its own module, and the natives and
@@ -676,12 +676,12 @@ def _class_body(
         for field_name, field_type in static_fields:
             field_type_haxe = disasm._haxe_annotation(code, field_type)
             if ir_class.static is not None:
-                field_type_haxe = mapargs.refine(
+                field_type_haxe = typeargs.refine_map(
                     field_type_haxe,
-                    mapargs.value_type(code, mapargs.field_node(code, ir_class.static, field_name)),
+                    typeargs.value_type(code, typeargs.field_node(code, ir_class.static, field_name)),
                 )
-                field_type_haxe = ifacenames.refine(
-                    field_type_haxe, code, mapargs.field_node(code, ir_class.static, field_name)
+                field_type_haxe = interfaces.refine(
+                    field_type_haxe, code, typeargs.field_node(code, ir_class.static, field_name)
                 )
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})
@@ -711,12 +711,12 @@ def _class_body(
         for field_name, field_type in fields:
             field_type_haxe = disasm._haxe_annotation(code, field_type)
             if ir_class.dynamic is not None:
-                field_type_haxe = mapargs.refine(
+                field_type_haxe = typeargs.refine_map(
                     field_type_haxe,
-                    mapargs.value_type(code, mapargs.field_node(code, ir_class.dynamic, field_name)),
+                    typeargs.value_type(code, typeargs.field_node(code, ir_class.dynamic, field_name)),
                 )
-                field_type_haxe = ifacenames.refine(
-                    field_type_haxe, code, mapargs.field_node(code, ir_class.dynamic, field_name)
+                field_type_haxe = interfaces.refine(
+                    field_type_haxe, code, typeargs.field_node(code, ir_class.dynamic, field_name)
                 )
             if field_type_haxe == "Array<Dynamic>":
                 elem_types = getattr(ir_class, "field_elem_types", {})

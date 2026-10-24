@@ -2756,7 +2756,7 @@ class Commands(BaseCommands):
         name (or substring), dumps that shader's interface — declared inputs,
         params, textures, globals, outputs and functions — decoded from the
         serialized `hxsl.ShaderData` in the string pool."""
-        from . import hxsl
+        from .recovery import hxsl
 
         shaders = hxsl.find_shaders(self.code)
         if not shaders:

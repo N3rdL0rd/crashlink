@@ -40,8 +40,8 @@ from .core import (
     is_static_name,
 )
 from .opcodes import opcodes
-from . import typeinit
-from .hxbit import is_serializable_virtual
+from .recovery import typeinit
+from .recovery.metadata import is_serializable_virtual
 from .stdlib.types import STD_TYPES, STD_WRAPPED
 
 
@@ -1057,11 +1057,11 @@ def _haxe_annotation(code: Bytecode, typ: Type, *, native: bool = False, body: O
 
 
 def generic_arguments(code: Bytecode, typ: Type, render: Optional[Callable[[Type], str]] = None) -> str:
-    """The `<...>` a reference to a generic user class is written with (see `classgenerics`), else ''."""
+    """The `<...>` a reference to a generic user class is written with (see `recovery.typeargs`), else ''."""
     definition = typ.definition
     if not isinstance(definition, Obj):
         return ""
-    from .classgenerics import class_generics
+    from .recovery.typeargs import class_generics
 
     args = class_generics(code).args.get(id(definition))
     if not args:

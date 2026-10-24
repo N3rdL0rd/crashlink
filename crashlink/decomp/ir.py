@@ -1369,7 +1369,7 @@ class IRCast(IRExpression):
         self.untyped = False
         # An UnsafeCast (not a SafeCast): the compiler read a Dynamic<T> as T, unchecked.
         self.unsafe = False
-        # The value type recovered for a map this casts out of Dynamic (see `mapargs`).
+        # The value type recovered for a map this casts out of Dynamic (see `recovery.typeargs`).
         self.map_value: Optional[str] = None
 
     def get_type(self) -> Type:

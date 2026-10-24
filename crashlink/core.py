@@ -2067,7 +2067,7 @@ class Bytecode(Serialisable):
         # Element type of the erased arrays a structure field, enum parameter, function type argument or
         # closure parameter holds; see disasm.erased_array_slots.
         self._erased_array_slots: Optional[Dict[Tuple[Any, ...], "Type"]] = None
-        # The type parameters of classes, recovered from casts of their erased slots; see classgenerics.
+        # The type parameters of classes, recovered from casts of their erased slots; see recovery.typeargs.
         self._class_generics: Optional[Any] = None
         # Structures that contain themselves (id of definition -> typedef name), and those a rendered
         # type has named so far; see disasm.recursive_structures.

@@ -1,5 +1,5 @@
 """Erased class type parameters: a generic class must be declared generic again, or its reads lose
-the unchecked casts the compiler gives a type parameter (see `crashlink.classgenerics`)."""
+the unchecked casts the compiler gives a type parameter (see `crashlink.recovery.typeargs`)."""
 
 import shutil
 import subprocess

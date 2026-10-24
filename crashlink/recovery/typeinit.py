@@ -13,7 +13,7 @@ import weakref
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from .core import Bytecode, Fun, Function, Obj, Type, Virtual
+from ..core import Bytecode, Fun, Function, Obj, Type, Virtual
 
 
 @dataclass

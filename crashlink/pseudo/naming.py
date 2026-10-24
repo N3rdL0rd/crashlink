@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, FrozenSet, Tuple
 from ..core import Bytecode, Obj, Type, Function, Fun, Native, Struct, destaticify, gIndex
 from .. import disasm
 from ..errors import MalformedBytecode
-from .. import abstracts, rtti_meta
+from ..recovery import abstracts, metadata
 from ..stdlib.types import STD_TYPES
 from ..decomp import IRFunction, IRExpression, IRConst, IRCall
 
@@ -125,21 +125,21 @@ def _basic_type_globals(code: Bytecode) -> Dict[int, str]:
 
 def _rtti_type_meta(code: Bytecode, name: str) -> str:
     """`@a @b(1) ` for the runtime metadata of the type registered as `name`."""
-    meta = rtti_meta.for_type(code, destaticify(name).lstrip("$"))
-    return rtti_meta.render_entries(meta.type) if meta is not None else ""
+    meta = metadata.for_type(code, destaticify(name).lstrip("$"))
+    return metadata.render_entries(meta.type) if meta is not None else ""
 
 
 def _rtti_member_meta(code: Bytecode, owner: Optional[Obj], member: str, static: bool) -> str:
     """Runtime metadata of a field or method of the class `owner` (either half)."""
     if owner is None:
         return ""
-    meta = rtti_meta.for_type(code, destaticify(owner.name.resolve(code)).lstrip("$"))
+    meta = metadata.for_type(code, destaticify(owner.name.resolve(code)).lstrip("$"))
     if meta is None:
         return ""
     if not static and member in ("new", "__constructor__"):
         member = "_"  # the constructor's metadata is kept under `_`
     table = (meta.statics if static else meta.fields).get(member)
-    return rtti_meta.render_entries(table) if table else ""
+    return metadata.render_entries(table) if table else ""
 
 
 def _struct_meta(obj: Optional[Obj]) -> str:

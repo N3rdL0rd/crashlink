@@ -9,8 +9,8 @@ from typing import Optional, List, Set, Dict, Tuple, Union, cast, Iterator, Iter
 from ..core import Bytecode, Obj, Type, Function, Fun, destaticify, tIndex, Dyn
 from .. import disasm
 from ..errors import MalformedBytecode
-from .. import abstracts, generics, typeinit
-from ..classgenerics import ScopeEntry, class_generics, method_root
+from ..recovery import abstracts, typeargs, typeinit
+from ..recovery.typeargs import ScopeEntry, class_generics, method_root
 from ..decomp import (
     IRClass,
     IRField,
@@ -535,7 +535,7 @@ def _scope_text(code: Bytecode, entry: ScopeEntry) -> str:
 
 def _method_slot_text(code: Bytecode, obj: Optional[Obj], name: str, *index: int) -> Optional[str]:
     """How a method of `obj` declares its return (no `index`) or parameter `index` when the class
-    that first declares the method types it with a class type parameter (see `classgenerics`)."""
+    that first declares the method types it with a class type parameter (see `recovery.typeargs`)."""
     if obj is None:
         return None
     root = method_root(code, obj, name)
@@ -570,10 +570,10 @@ def _own_type_variables(
     is_instance: bool,
 ) -> Tuple[Dict[int, int], Optional[int]]:
     """The parameters of `func` that are its type variables, and the variable of its return (see
-    `generics`). A method that overrides or is overridden keeps every parameter Dynamic: Haxe
+    `recovery.typeargs`). A method that overrides or is overridden keeps every parameter Dynamic: Haxe
     requires the overriding method to declare the same type parameters."""
-    variables = generics.type_variables(code, func)
-    returned = generics.return_variable(code, func)
+    variables = typeargs.type_variables(code, func)
+    returned = typeargs.return_variable(code, func)
     if not variables or not is_instance:
         return variables, returned
     obj = containing.dynamic if containing is not None else None

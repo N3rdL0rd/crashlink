@@ -17,7 +17,8 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, cast
 if TYPE_CHECKING:
     from ..function import IRClass, IRFunction
 
-from ... import disasm, generics
+from ... import disasm
+from ...recovery import typeargs
 from ...core import Bytecode, Fun, Function, Obj, Type, Virtual
 from ..ir import (
     IRBlock,
@@ -596,7 +597,7 @@ def _share_type_variable_elements(
     """Arrays passed for `Array<T>` parameters of one type variable have the one element type:
     an array whose element type is unknown takes the type of another that has it."""
     groups: Dict[int, List[IRExpression]] = {}
-    for position, number in generics.type_variables(code, callee).items():
+    for position, number in typeargs.type_variables(code, callee).items():
         if position < len(call.args):
             groups.setdefault(number, []).append(_strip_cast(call.args[position]))
     for args in groups.values():
@@ -612,7 +613,7 @@ def _share_type_variable_elements(
         if known is None:
             continue
         signature = callee.type.resolve(code).definition
-        for position, number in generics.type_variables(code, callee).items():
+        for position, number in typeargs.type_variables(code, callee).items():
             arg = _strip_cast(call.args[position]) if position < len(call.args) else None
             if (
                 arg is not None

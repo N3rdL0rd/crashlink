@@ -9,7 +9,7 @@ from typing import Optional, Set, Dict, Tuple
 from .doc import strip
 from ..core import Bytecode, Obj, Type, Function, Fun, Enum, Null
 from .. import disasm
-from .. import mapargs
+from ..recovery import typeargs
 from ..decomp import (
     IRCast,
     IRStatement,
@@ -262,7 +262,9 @@ def _array_literal_ascription(expr: IRArrayLiteral, code: Bytecode) -> Optional[
     if expr.elements and not erased:
         return None
     annotation = _literal_type_annotation(expr, code)
-    return mapargs.refine(annotation, getattr(expr, "map_value", None)) if annotation is not None else None
+    return (
+        typeargs.refine_map(annotation, getattr(expr, "map_value", None)) if annotation is not None else None
+    )
 
 
 def _type_i64_literals(

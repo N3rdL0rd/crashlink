@@ -9,7 +9,7 @@ from typing import Optional, List, Set, Dict, Tuple, Iterator
 from ..core import Bytecode, Obj, Ref, Type, Function, Fun, Native, Enum, destaticify
 from .. import disasm
 from ..errors import MalformedBytecode
-from .. import typeinit
+from ..recovery import typeinit
 from ..decomp import IRField, IRNew, IRStatement, IRLocal, IRConst, IRCall, IRTryCatch, IREnumConstruct
 from .naming import (
     _std_func_name,

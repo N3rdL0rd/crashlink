@@ -22,7 +22,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from .core import Bytecode
+from ..core import Bytecode
 
 # --- hxsl.Ast enum orderings (constructor index -> name) ---
 #

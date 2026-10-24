@@ -11,7 +11,7 @@ from .doc import mark
 from .symbols import SymbolRef
 from ..core import Bytecode, Obj, Function, is_static_name, gIndex
 from .. import disasm
-from .. import mapargs
+from ..recovery import typeargs
 from ..decomp import (
     IRBreak,
     IRContinue,
@@ -1199,7 +1199,7 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
     seen: Set[int] = set()
     by_name: Dict[str, str] = {}
     for local in locals_:
-        found = mapargs.value_type(code, ("r", findex, local.reg_idx)) if local.reg_idx is not None else None
+        found = typeargs.value_type(code, ("r", findex, local.reg_idx)) if local.reg_idx is not None else None
         if found is not None:
             by_name.setdefault(local.name, found)
 
@@ -1210,9 +1210,9 @@ def _tag_map_allocations(root: IRStatement, code: Bytecode, findex: int, locals_
         if isinstance(stmt, IRAssign) and isinstance(stmt.target, IRField) and isinstance(stmt.expr, IRNew):
             owner = stmt.target.target.get_type().definition
             for declaring in [owner, *_ancestors(code, owner)] if isinstance(owner, Obj) else []:
-                node = mapargs.field_node(code, declaring, stmt.target.field_name)
+                node = typeargs.field_node(code, declaring, stmt.target.field_name)
                 if node is not None:
-                    setattr(stmt.expr, "map_value", mapargs.value_type(code, node))
+                    setattr(stmt.expr, "map_value", typeargs.value_type(code, node))
                     break
         if (
             isinstance(stmt, IRAssign)

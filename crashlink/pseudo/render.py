@@ -27,8 +27,8 @@ from ..core import (
 )
 from .. import disasm
 from ..errors import MalformedBytecode
-from .. import abstracts, arrayelems, enumparams, generics, ifacenames, mapargs
-from ..classgenerics import class_generics
+from ..recovery import abstracts, typeargs, interfaces
+from ..recovery.typeargs import class_generics
 from ..decomp import (
     IRBreak,
     IRContinue,
@@ -535,7 +535,7 @@ def _receiver_text(expr: IRExpression, code: Bytecode, ir_function: Optional[IRF
         and isinstance(expr.get_type().definition, Obj)
         and not strip(text).startswith(("cast ", "(cast "))
     ):
-        return f"({text} : {mapargs.refine(disasm._haxe_annotation(code, expr.get_type()), expr.map_value)})"
+        return f"({text} : {typeargs.refine_map(disasm._haxe_annotation(code, expr.get_type()), expr.map_value)})"
     return text
 
 
@@ -984,7 +984,7 @@ def _render_expression(
             # A class converted to one of its interfaces caches the conversion, which only naming the interface repeats.
             source_def = expr.target.expr.get_type().definition
             interface = (
-                ifacenames.conversion(code, source_def, target_type.definition)
+                interfaces.conversion(code, source_def, target_type.definition)
                 if isinstance(source_def, Obj)
                 else None
             )
@@ -993,7 +993,7 @@ def _render_expression(
                 if interface is not None
                 else disasm._haxe_annotation(code, target_type)
             )
-            target_str = f"(cast {target_str} : {mapargs.refine(annotation, expr.target.map_value)})"
+            target_str = f"(cast {target_str} : {typeargs.refine_map(annotation, expr.target.map_value)})"
         if isinstance(target_type.definition, Obj) and is_static_name(type_name):
             if expr.dynamic:
                 # `var d:Dynamic = Cls; d.field`: the class object read through Dynamic.
@@ -1571,7 +1571,7 @@ def _render_expression(
                     if isinstance(ctor_sig.args[i + 1].resolve(code).definition, Dyn):
                         ctor_args[i] = _ascribe_literal_for_dynamic(a, ctor_args[i], code)
             args_str = ", ".join(ctor_args)
-            rendered = f"new {mapargs.refine(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}{disasm.generic_arguments(code, expr.get_type())}({args_str})"
+            rendered = f"new {typeargs.refine_map(disasm.STD_WRAPPED.get(type_name) or disasm.type_to_haxe(type_name), getattr(expr, 'map_value', None))}{disasm.generic_arguments(code, expr.get_type())}({args_str})"
             owner = expr.get_type().definition
             # A private constructor of a std class (an inlined `JsonParser.parse`).
             return (
@@ -1637,7 +1637,7 @@ def _render_expression(
             and isinstance(boxed, IRCall)
             and isinstance(boxed.target, IRConst)
             and isinstance(boxed.target.value, Function)
-            and generics.return_variable(code, boxed.target.value) is not None
+            and typeargs.return_variable(code, boxed.target.value) is not None
         ):
             # The compiler's own cast of a call that returns a type variable: the context fixes it.
             return inner
@@ -3081,17 +3081,17 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
                     variable if arg_core_type.kind.value == Type.Kind.DYN.value else f"Array<{variable}>"
                 )
             elif i not in erased and i not in narrowed:
-                arg_haxe_type_name = mapargs.refine(
+                arg_haxe_type_name = typeargs.refine_map(
                     arg_haxe_type_name,
-                    mapargs.value_type(code, ("r", func_core.findex.value, start_arg + i)),
+                    typeargs.value_type(code, ("r", func_core.findex.value, start_arg + i)),
                 )
-                arg_haxe_type_name = ifacenames.refine(
+                arg_haxe_type_name = interfaces.refine(
                     arg_haxe_type_name, code, ("r", func_core.findex.value, start_arg + i)
                 )
                 if (
                     arg_haxe_type_name == "Dynamic"
                     and disasm.type_name(code, arg_core_type) == "hl.BaseType"
-                    and enumparams.is_enum_parameter(code, func_core.findex.value, start_arg + i)
+                    and typeargs.is_enum_parameter(code, func_core.findex.value, start_arg + i)
                 ):
                     arg_haxe_type_name = "Enum<Dynamic>"
 
@@ -3149,10 +3149,10 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
             params_str_list.append(f"{param_name}{param_type_decl}")
 
         ret_core_type = core_fun_type_def.ret.resolve(code)
-        return_type_str = ifacenames.refine(
-            mapargs.refine(
+        return_type_str = interfaces.refine(
+            typeargs.refine_map(
                 _return_annotation(code, func_core, ret_core_type),
-                mapargs.value_type(code, ("ret", func_core.findex.value)),
+                typeargs.value_type(code, ("ret", func_core.findex.value)),
             ),
             code,
             ("ret", func_core.findex.value),
@@ -3170,7 +3170,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
 
     params_joined_str = ", ".join(_param_def(p, ir_func) for p in params_str_list)
     ret_decl = f": {return_type_str}" if return_type_str else ""
-    constraints = generics.constraints(code, func_core) if variables else {}
+    constraints = typeargs.constraints(code, func_core) if variables else {}
     type_params = (
         "<"
         + ", ".join(
@@ -3214,7 +3214,7 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
         local_types.pop(name, None)
     _tag_map_allocations(ir_func.block, code, func_core.findex.value, ir_func.all_locals)
     literal_arrays = _literal_array_types(ir_func.block, code)
-    interfaces: Dict[str, Set[Optional[str]]] = {}
+    local_interfaces: Dict[str, Set[Optional[str]]] = {}
     map_values: Dict[str, Optional[str]] = {}
     defs_of_web: Dict[int, List[int]] = {}
     for index, web in getattr(ir_func, "_web_of_def", {}).items():
@@ -3222,27 +3222,31 @@ def _generate_function_pseudo_mapped(ir_func: IRFunction) -> Tuple[str, Dict[int
     for local in ir_func.all_locals:
         if local.name in local_types and local.reg_idx is not None:
             node = ("r", func_core.findex.value, local.reg_idx)
-            local_types[local.name] = mapargs.refine(local_types[local.name], mapargs.value_type(code, node))
-            map_values.setdefault(local.name, mapargs.value_type(code, node))
-            local_types[local.name] = arrayelems.refine(
-                local_types[local.name], arrayelems.element_type(code, func_core, local.reg_idx)
+            local_types[local.name] = typeargs.refine_map(
+                local_types[local.name], typeargs.value_type(code, node)
+            )
+            map_values.setdefault(local.name, typeargs.value_type(code, node))
+            local_types[local.name] = typeargs.refine_array(
+                local_types[local.name], typeargs.element_type(code, func_core, local.reg_idx)
             )
             if local.name in literal_arrays:
-                local_types[local.name] = arrayelems.refine(
+                local_types[local.name] = typeargs.refine_array(
                     local_types[local.name], literal_arrays[local.name][len("Array<") : -1]
                 )
             regs = func_core.regs
             if local.reg_idx >= len(regs) or regs[local.reg_idx].resolve(code) is not local.get_type():
-                interfaces.setdefault(local.name, set()).add(None)
+                local_interfaces.setdefault(local.name, set()).add(None)
                 continue
             defs = defs_of_web.get(local.web, []) if local.web is not None else None
-            interface = ifacenames.local(code, func_core.findex.value, local.reg_idx, defs)
-            interfaces.setdefault(local.name, set()).add(interface.name if interface is not None else None)
-    for name, found in interfaces.items():
+            interface = interfaces.local(code, func_core.findex.value, local.reg_idx, defs)
+            local_interfaces.setdefault(local.name, set()).add(
+                interface.name if interface is not None else None
+            )
+    for name, found in local_interfaces.items():
         # A name several registers share is declared once: only as what they all are.
         only = next(iter(found))
         if len(found) == 1 and only is not None:
-            local_types[name] = mapargs.refine(disasm.type_to_haxe(only), map_values.get(name))
+            local_types[name] = typeargs.refine_map(disasm.type_to_haxe(only), map_values.get(name))
     receiver_types = _virtual_receiver_static_types(ir_func, code)
     for name, haxe_type in receiver_types.items():
         if name in local_types:
@@ -3547,7 +3551,7 @@ def _try_instance_method_call(
     ):
         # A dynamic value (`Any`) has no fields to call; name the class it is used as.
         annotation = disasm._haxe_annotation(code, first_arg.get_type())
-        arg_expr_str = f"({arg_expr_str} : {mapargs.refine(annotation, first_arg.map_value)})"
+        arg_expr_str = f"({arg_expr_str} : {typeargs.refine_map(annotation, first_arg.map_value)})"
     elif _needs_receiver_parens(arg_expr_str):
         arg_expr_str = f"({arg_expr_str})"
     return f"{arg_expr_str}.{method_name}"

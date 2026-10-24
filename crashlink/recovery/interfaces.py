@@ -25,8 +25,8 @@ import weakref
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Tuple, Union
 
+from ..core import Bytecode, Function, Obj, Opcode, Reg, Regs, Virtual, is_static_name
 from . import abstracts, typeinit
-from .core import Bytecode, Function, Obj, Opcode, Reg, Regs, Virtual, is_static_name
 
 Node = Tuple
 
@@ -523,7 +523,7 @@ def _result(code: Bytecode) -> "_Result":
 
 def interface(code: Bytecode, node: Optional[Node]) -> Optional[typeinit.Interface]:
     """The interface the value at `node` was declared as: `("r", findex, reg)` for a parameter,
-    `("ret", findex)` for a return, or a `mapargs.field_node`."""
+    `("ret", findex)` for a return, or a `typeargs.field_node`."""
     return _result(code).named.get(node) if node is not None else None
 
 
@@ -550,7 +550,7 @@ def local(
 
 def refine(annotation: str, code: Bytecode, node: Optional[Node]) -> str:
     """The declaration of the value at `node`: its interface, where one was recovered."""
-    from . import disasm
+    from .. import disasm
 
     found = interface(code, node)
     return disasm.type_to_haxe(found.name) if found is not None else annotation

@@ -9,7 +9,7 @@ from typing import Optional, List, Set, Dict, Tuple, Any
 from .doc import RenderedSource, marked, render_marked
 from ..core import Bytecode, Obj, Type, Function, Fun, Native, destaticify
 from .. import disasm
-from .. import abstracts, typeinit
+from ..recovery import abstracts, typeinit
 from ..decomp import IRClass, IRFunction
 from ..decomp.opt.clean import default_arg_regs, default_arg_value, overriding_default_arg_regs
 from .naming import _method_registry, _rtti_type_meta, _struct_meta

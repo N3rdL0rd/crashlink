@@ -27,7 +27,8 @@ from ..core import (
 )
 from ..errors import DecompError
 from ..globals import DEBUG, dbg_print
-from .. import abstracts, disasm, mapargs
+from ..recovery import abstracts, typeargs
+from .. import disasm
 from ..opcodes import arithmetic, conditionals, simple_calls
 from .ir import (
     IRExpression,
@@ -1869,7 +1870,7 @@ class IRFunction:
                 setattr(
                     new_expr,
                     "map_value",
-                    mapargs.value_type(self.code, ("r", self.func.findex.value, op.df["dst"].value)),
+                    typeargs.value_type(self.code, ("r", self.func.findex.value, op.df["dst"].value)),
                 )
                 block.statements.append(IRAssign(self.code, dst_local, new_expr))
             elif op.op in ("ToSFloat", "ToUFloat"):
@@ -1893,7 +1894,7 @@ class IRFunction:
                 src_local = source_locals[op.df["src"].value]
                 cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
                 if op.op == "ToVirtual":
-                    cast_expr.map_value = mapargs.value_type(
+                    cast_expr.map_value = typeargs.value_type(
                         self.code, ("r", self.func.findex.value, op.df["dst"].value)
                     )
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
@@ -1907,7 +1908,7 @@ class IRFunction:
                 src_local = source_locals[op.df["src"].value]
                 cast_expr = IRCast(self.code, self.func.regs[op.df["dst"].value], src_local)
                 cast_expr.unsafe = op.op == "UnsafeCast"
-                cast_expr.map_value = mapargs.value_type(
+                cast_expr.map_value = typeargs.value_type(
                     self.code, ("r", self.func.findex.value, op.df["dst"].value)
                 )
                 block.statements.append(IRAssign(self.code, dst_local, cast_expr))
